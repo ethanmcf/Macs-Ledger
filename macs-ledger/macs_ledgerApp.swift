@@ -1,17 +1,12 @@
-//
-//  macs_ledgerApp.swift
-//  macs-ledger
-//
-//  Created by Ethan McFarland on 2026-11-16.
-//
-
 import SwiftUI
+import SwiftData
 
 @main
 struct macs_ledgerApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            QuickEntryView()
         }
+        .modelContainer(for: [Category.self, Expense.self])
     }
 }
