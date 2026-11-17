@@ -9,7 +9,7 @@ struct DashboardView: View {
     @Query(sort: \Category.sortOrder) private var categories: [Category]
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
 
-    @State private var isAddingExpense = false
+    @State private var presenter = QuickEntryPresenter.shared
 
     private let accent = Color.indigo
     private let currencyCode = "CAD"
@@ -35,13 +35,14 @@ struct DashboardView: View {
         .fontDesign(.rounded)
         .tint(accent)
         .overlay {
-            if isAddingExpense {
+            if presenter.isPresented {
                 QuickEntryView(month: month) {
-                    withAnimation(.snappy) { isAddingExpense = false }
+                    withAnimation(.snappy) { presenter.isPresented = false }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.snappy, value: presenter.isPresented)
         .onAppear { try? LedgerStore.seedDefaultsIfNeeded(in: context) }
     }
 
@@ -242,7 +243,7 @@ struct DashboardView: View {
 
     private var addButton: some View {
         Button {
-            withAnimation(.snappy) { isAddingExpense = true }
+            withAnimation(.snappy) { presenter.isPresented = true }
         } label: {
             Image(systemName: "plus")
                 .font(.title2.weight(.bold))
