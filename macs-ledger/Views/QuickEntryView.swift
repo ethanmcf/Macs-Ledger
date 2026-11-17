@@ -15,9 +15,12 @@ struct QuickEntryView: View {
 
     private let accent = Color.indigo
     private let month: Month
+    /// Called when the panel should close (tap outside, or after saving).
+    private let onDismiss: (() -> Void)?
 
-    init(month: Month = .current) {
+    init(month: Month = .current, onDismiss: (() -> Void)? = nil) {
         self.month = month
+        self.onDismiss = onDismiss
         let key = month.key
         _monthExpenses = Query(filter: #Predicate<Expense> { $0.monthKey == key })
     }
@@ -41,7 +44,10 @@ struct QuickEntryView: View {
             ZStack(alignment: .bottom) {
                 Color.black.opacity(0.35)
                     .ignoresSafeArea()
-                    .onTapGesture { isAmountFocused = false }
+                    .onTapGesture {
+                        isAmountFocused = true
+                        onDismiss?()
+                    }
 
                 panel
                     .frame(height: geometry.size.height / 3)
@@ -210,6 +216,7 @@ struct QuickEntryView: View {
             try LedgerStore.addExpense(amount: value, category: category, date: date, in: context)
             amount = ""
             isAmountFocused = false
+            onDismiss?()
         } catch {
             errorMessage = error.localizedDescription
         }
