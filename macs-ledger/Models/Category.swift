@@ -23,10 +23,10 @@ final class Category {
 }
 
 extension Category {
-    /// Sum of this category's expenses within the given date interval.
-    func total(in interval: DateInterval) -> Decimal {
+    /// Sum of this category's expenses for the given month.
+    func total(for month: Month) -> Decimal {
         expenses
-            .filter { interval.contains($0.date) }
+            .filter { $0.monthKey == month.key }
             .reduce(0) { $0 + $1.amount }
     }
 

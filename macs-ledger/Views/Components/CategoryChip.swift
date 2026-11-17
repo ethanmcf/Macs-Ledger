@@ -1,0 +1,35 @@
+import SwiftUI
+
+struct CategoryChip: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    let accent: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption)
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .foregroundStyle(isSelected ? .white : .primary)
+            .background(
+                Capsule().fill(isSelected ? accent : Color(UIColor.tertiarySystemFill))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#Preview {
+    HStack {
+        CategoryChip(title: "Food", icon: "fork.knife", isSelected: true, accent: .indigo) {}
+        CategoryChip(title: "Coffee", icon: "cup.and.saucer.fill", isSelected: false, accent: .indigo) {}
+    }
+    .padding()
+}

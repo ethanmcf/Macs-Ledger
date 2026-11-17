@@ -5,7 +5,8 @@ struct QuickEntryView: View {
     @Environment(\.modelContext) private var context
 
     @Query(sort: \Category.sortOrder) private var categories: [Category]
-    @Query private var expenses: [Expense]
+    /// Only this month's expenses.
+    @Query private var monthExpenses: [Expense]
 
     @State private var amount: String = ""
     @State private var selectedCategory: Category?
@@ -13,17 +14,20 @@ struct QuickEntryView: View {
     @FocusState private var isAmountFocused: Bool
 
     private let accent = Color.indigo
+    private let month: Month
 
-    private var thisMonth: DateInterval { .month() }
+    init(month: Month = .current) {
+        self.month = month
+        let key = month.key
+        _monthExpenses = Query(filter: #Predicate<Expense> { $0.monthKey == key })
+    }
 
     private var monthlyTotal: Decimal {
-        expenses
-            .filter { thisMonth.contains($0.date) }
-            .reduce(0) { $0 + $1.amount }
+        monthExpenses.reduce(0) { $0 + $1.amount }
     }
 
     private var categoryTotal: Decimal {
-        selectedCategory?.total(in: thisMonth) ?? 0
+        selectedCategory?.total(for: month) ?? 0
     }
 
     private var parsedAmount: Decimal? {
@@ -35,7 +39,6 @@ struct QuickEntryView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottom) {
-                // Dimmed backdrop — tap to dismiss the keyboard
                 Color.black.opacity(0.35)
                     .ignoresSafeArea()
                     .onTapGesture { isAmountFocused = false }
@@ -63,7 +66,6 @@ struct QuickEntryView: View {
             isAmountFocused = true
         }
         .onChange(of: categories, initial: true) {
-            // Keep a valid selection when categories load, are added or deleted
             if selectedCategory == nil || !categories.contains(where: { $0 == selectedCategory }) {
                 selectedCategory = categories.first
             }
@@ -75,94 +77,108 @@ struct QuickEntryView: View {
         }
     }
 
-    // MARK: - Panel
-
+    // Panel
     private var panel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Grabber
-            Capsule()
-                .fill(Color(UIColor.tertiaryLabel))
-                .frame(width: 36, height: 5)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
-
-            // Title + amount
-            HStack(alignment: .firstTextBaseline) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("$")
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    TextField("0.00", text: $amount)
-                        .font(.system(size: 42, weight: .semibold))
-                        .monospacedDigit()
-                        .keyboardType(.decimalPad)
-                        .focused($isAmountFocused)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                Text(Date.now, format: .dateTime.month(.abbreviated).day())
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-            }
-
-            // Category chips
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(categories) { category in
-                        CategoryChip(
-                            title: category.name,
-                            icon: category.icon,
-                            isSelected: category == selectedCategory,
-                            accent: accent
-                        ) {
-                            withAnimation(.snappy(duration: 0.2)) {
-                                selectedCategory = category
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Compact stats
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 4) {
-                    Text(selectedCategory?.name ?? "—")
-                        .fontWeight(.semibold)
-                    Text(categoryTotal, format: .currency(code: "USD"))
-                        .foregroundStyle(accent)
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Text("of")
-                        .foregroundStyle(.secondary)
-                    Text(monthlyTotal, format: .currency(code: "USD"))
-                        .foregroundStyle(.secondary)
-                    Text("this month")
-                        .foregroundStyle(.secondary)
-                }
-                .font(.caption)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-
-                ProgressView(value: monthlyTotal > 0 ? min(NSDecimalNumber(decimal: categoryTotal / monthlyTotal).doubleValue, 1) : 0)
-                    .tint(accent)
-            }
-
+            grabber
+            amountRow
+            categoryChips
+            statsLine
             Spacer(minLength: 0)
-
             addButton
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
     }
 
-    // MARK: - Button
+    private var grabber: some View {
+        Capsule()
+            .fill(Color(UIColor.tertiaryLabel))
+            .frame(width: 36, height: 5)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+    }
 
+    // Amount input
+    private var amountRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("$")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                TextField("0.00", text: $amount)
+                    .font(.system(size: 42, weight: .semibold))
+                    .monospacedDigit()
+                    .keyboardType(.decimalPad)
+                    .focused($isAmountFocused)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(Date.now, format: .dateTime.month(.abbreviated).day())
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+        }
+    }
+
+    // Category chips
+    private var categoryChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories) { category in
+                    CategoryChip(
+                        title: category.name,
+                        icon: category.icon,
+                        isSelected: category == selectedCategory,
+                        accent: accent
+                    ) {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            selectedCategory = category
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Compact stats
+    private var statsLine: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Text(selectedCategory?.name ?? "—")
+                    .fontWeight(.semibold)
+                Text(categoryTotal, format: .currency(code: "CAD"))
+                    .foregroundStyle(accent)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("of")
+                    .foregroundStyle(.secondary)
+                Text(monthlyTotal, format: .currency(code: "CAD"))
+                    .foregroundStyle(.secondary)
+                Text("this month")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+
+            ProgressView(value: categoryShare)
+                .tint(accent)
+        }
+    }
+
+    /// Selected category's share of this month's spending, 0...1.
+    private var categoryShare: Double {
+        guard monthlyTotal > 0 else { return 0 }
+        return min(NSDecimalNumber(decimal: categoryTotal / monthlyTotal).doubleValue, 1)
+    }
+
+    // MARK: - Button
     private var addButton: some View {
         Button(action: saveEntry) {
             HStack(spacing: 8) {
@@ -185,45 +201,18 @@ struct QuickEntryView: View {
 
     private var canSave: Bool { parsedAmount != nil && selectedCategory != nil }
 
-    // MARK: - Actions
-
+    // Actions
     private func saveEntry() {
         guard let value = parsedAmount, let category = selectedCategory else { return }
         do {
-            try LedgerStore.addExpense(amount: value, category: category, in: context)
+            // Expenses are filed under the month this panel is showing
+            let date = month == .current ? Date.now : month.startDate
+            try LedgerStore.addExpense(amount: value, category: category, date: date, in: context)
             amount = ""
             isAmountFocused = false
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-}
-
-// MARK: - Category Chip
-
-struct CategoryChip: View {
-    let title: String
-    let icon: String
-    let isSelected: Bool
-    let accent: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.caption)
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .foregroundStyle(isSelected ? .white : .primary)
-            .background(
-                Capsule().fill(isSelected ? accent : Color(UIColor.tertiarySystemFill))
-            )
-        }
-        .buttonStyle(.plain)
     }
 }
 

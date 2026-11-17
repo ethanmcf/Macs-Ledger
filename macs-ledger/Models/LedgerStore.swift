@@ -54,13 +54,40 @@ enum LedgerStore {
         try context.save()
     }
 
-    /// Total of all expenses within the given interval.
-    static func total(in interval: DateInterval, context: ModelContext) throws -> Decimal {
-        let start = interval.start, end = interval.end
+    // MARK: Monthly totals
+
+    /// All expenses recorded for a month, newest first.
+    static func expenses(for month: Month, in context: ModelContext) throws -> [Expense] {
+        let key = month.key
         let descriptor = FetchDescriptor<Expense>(
-            predicate: #Predicate { $0.date >= start && $0.date < end }
+            predicate: #Predicate { $0.monthKey == key },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        return try context.fetch(descriptor).reduce(0) { $0 + $1.amount }
+        return try context.fetch(descriptor)
+    }
+
+    /// Total spending across all categories for a month.
+    static func total(for month: Month, in context: ModelContext) throws -> Decimal {
+        try expenses(for: month, in: context).reduce(0) { $0 + $1.amount }
+    }
+
+    /// Spending per category for a month. Categories with no spending are included as 0.
+    static func categoryTotals(for month: Month, in context: ModelContext) throws -> [Category: Decimal] {
+        var totals: [Category: Decimal] = [:]
+        for category in try context.fetch(FetchDescriptor<Category>()) {
+            totals[category] = 0
+        }
+        for expense in try expenses(for: month, in: context) {
+            guard let category = expense.category else { continue }
+            totals[category, default: 0] += expense.amount
+        }
+        return totals
+    }
+
+    /// Months that have at least one expense, newest first.
+    static func monthsWithSpending(in context: ModelContext) throws -> [Month] {
+        let keys = Set(try context.fetch(FetchDescriptor<Expense>()).map(\.monthKey))
+        return keys.filter { $0 > 0 }.map(Month.init(key:)).sorted(by: >)
     }
 }
 
@@ -75,12 +102,5 @@ enum LedgerError: LocalizedError {
         case .duplicateCategory(let name): "A category named “\(name)” already exists."
         case .invalidAmount: "Amount must be greater than zero."
         }
-    }
-}
-
-extension DateInterval {
-    /// The calendar month containing `date`.
-    static func month(containing date: Date = .now, calendar: Calendar = .current) -> DateInterval {
-        calendar.dateInterval(of: .month, for: date) ?? DateInterval(start: date, duration: 0)
     }
 }
