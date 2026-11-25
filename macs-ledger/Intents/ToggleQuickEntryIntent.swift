@@ -1,7 +1,7 @@
 import AppIntents
 import Observation
 
-/// Shared on/off state for the quick entry overlay, so an App Intent can toggle it.
+/// Shared on/off state for the quick entry overlay, so an App Intent can open it.
 @MainActor
 @Observable
 final class QuickEntryPresenter {
@@ -9,33 +9,31 @@ final class QuickEntryPresenter {
 
     var isPresented = false
 
-    func toggle() { isPresented.toggle() }
+    func present() { isPresented = true }
 }
 
-/// Shows or hides the quick entry panel. Bring the app forward when it runs, so it can be
-/// bound to Back Tap via a Shortcut (Settings › Accessibility › Touch › Back Tap).
 struct ToggleQuickEntryIntent: AppIntent {
-    static let title: LocalizedStringResource = "Toggle Quick Entry"
-    static let description = IntentDescription("Shows or hides the quick expense entry panel.")
+    static let title: LocalizedStringResource = "Open Quick Entry"
+    static let description = IntentDescription("Opens the quick expense entry panel.")
     static let supportedModes: IntentModes = .foreground
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        QuickEntryPresenter.shared.toggle()
+        QuickEntryPresenter.shared.present()
         return .result()
     }
 }
 
-/// Makes the intent appear in the Shortcuts app automatically, no setup needed.
+/// Makes the intent appear in the Shortcuts app automatically
 struct LedgerShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: ToggleQuickEntryIntent(),
             phrases: [
-                "Toggle quick entry in \(.applicationName)",
+                "Open quick entry in \(.applicationName)",
                 "Add an expense in \(.applicationName)",
             ],
-            shortTitle: "Quick Entry",
+            shortTitle: "Ledger - Quick Entry",
             systemImageName: "plus.circle.fill"
         )
     }

@@ -40,31 +40,28 @@ struct QuickEntryView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .bottom) {
-                Color.black.opacity(0.35)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        isAmountFocused = true
-                        onDismiss?()
-                    }
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    isAmountFocused = false
+                    onDismiss?()
+                }
 
-                panel
-                    .frame(height: geometry.size.height / 3)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 28,
-                            topTrailingRadius: 28,
-                            style: .continuous
-                        )
-                        .fill(Color(UIColor.systemBackground))
-                        .shadow(color: .black.opacity(0.15), radius: 20, y: -4)
-                        .ignoresSafeArea(.container, edges: .bottom)
+            panel
+                .frame(maxWidth: .infinity)
+                .background(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 28,
+                        topTrailingRadius: 28,
+                        style: .continuous
                     )
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .fill(Color(UIColor.systemBackground))
+                    .shadow(color: .black.opacity(0.15), radius: 20, y: -4)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                )
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .fontDesign(.rounded)
         .tint(accent)
         .onAppear {
@@ -90,8 +87,8 @@ struct QuickEntryView: View {
             amountRow
             categoryChips
             statsLine
-            Spacer(minLength: 0)
             addButton
+                .padding(.top, 4)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 12)
