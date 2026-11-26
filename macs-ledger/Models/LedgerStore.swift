@@ -23,8 +23,47 @@ enum LedgerStore {
         return category
     }
 
-    /// Deletes the category and (via cascade) all of its expenses.
-    static func deleteCategory(_ category: Category, in context: ModelContext) throws {
+    /// Renames a category and/or changes its icon.
+    static func updateCategory(_ category: Category, name: String, icon: String, in context: ModelContext) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw LedgerError.emptyName }
+        let others = try context.fetch(FetchDescriptor<Category>()).filter { $0 != category }
+        guard !others.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else {
+            throw LedgerError.duplicateCategory(trimmed)
+        }
+        category.name = trimmed
+        category.icon = icon
+        try context.save()
+    }
+
+    /// Hides or shows a category in quick entry. Its expenses are unaffected.
+    static func setHidden(_ hidden: Bool, for category: Category, in context: ModelContext) throws {
+        category.isHidden = hidden
+        try context.save()
+    }
+
+    /// Saves a new chip order: each category's position in the array becomes its sortOrder.
+    static func reorder(_ categories: [Category], in context: ModelContext) throws {
+        for (index, category) in categories.enumerated() {
+            category.sortOrder = index
+        }
+        try context.save()
+    }
+
+    /// Moves every expense to another category, then deletes the now-empty category.
+    static func deleteCategory(_ category: Category, movingExpensesTo destination: Category, in context: ModelContext) throws {
+        for expense in Array(category.expenses) {
+            expense.category = destination
+        }
+        context.delete(category)
+        try context.save()
+    }
+
+    /// Deletes the category and all of its expenses.
+    static func deleteCategoryAndExpenses(_ category: Category, in context: ModelContext) throws {
+        for expense in Array(category.expenses) {
+            context.delete(expense)
+        }
         context.delete(category)
         try context.save()
     }

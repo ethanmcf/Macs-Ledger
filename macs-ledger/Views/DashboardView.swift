@@ -166,7 +166,7 @@ struct DashboardView: View {
     private var yearStats: some View {
         Card(title: "This year") {
             HStack(spacing: 16) {
-                yearSummaryStat("Total spent so far", yearToDate)
+                yearSummaryStat("Total spent", yearToDate)
                 Divider()
                 yearSummaryStat("Monthly average", monthlyAverage)
             }

@@ -22,6 +22,11 @@ struct EditExpenseView: View {
         _date = State(initialValue: expense.date)
     }
 
+    /// Visible categories, plus this expense's own category even if it's hidden.
+    private var pickerCategories: [Category] {
+        categories.filter { !$0.isHidden || $0 == expense.category }
+    }
+
     private var parsedAmount: Decimal? {
         guard let value = Decimal(string: amount, locale: .current), value > 0 else { return nil }
         return value
@@ -43,7 +48,7 @@ struct EditExpenseView: View {
                     LabeledContent("Category") {
                         Menu {
                             Picker("Category", selection: $category) {
-                                ForEach(categories) { item in
+                                ForEach(pickerCategories) { item in
                                     Label(item.name, systemImage: item.icon).tag(Optional(item))
                                 }
                             }

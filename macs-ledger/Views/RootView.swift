@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(\.modelContext) private var context
     @State private var presenter = QuickEntryPresenter.shared
     @State private var page: Page = .dashboard
+    @State private var showsSettings = false
 
     private let accent = Color.appAccent
 
@@ -16,8 +17,6 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            // Both pages stay loaded and are only shown or hidden, so switching doesn't rebuild
-            // them (which redrew the toolbar) and each keeps its scroll position.
             ZStack {
                 pageView(DashboardView(), for: .dashboard)
                 pageView(TransactionsView(), for: .transactions)
@@ -31,7 +30,11 @@ struct RootView: View {
                     .pickerStyle(.segmented)
                     .frame(width: 240)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Settings", systemImage: "gearshape") { showsSettings = true }
+                }
             }
+            .sheet(isPresented: $showsSettings) { SettingsView() }
             .overlay(alignment: .bottomTrailing) { addButton }
         }
         .fontDesign(.rounded)

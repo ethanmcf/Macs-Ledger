@@ -9,9 +9,12 @@ final class Category {
     /// Position in the chip list (lower comes first).
     var sortOrder: Int
     var createdAt: Date
+    /// Hidden categories don't appear in quick entry but keep their history.
+    var isHidden: Bool = false
 
-    /// Deleting a category deletes its expenses too.
-    @Relationship(deleteRule: .cascade, inverse: \Expense.category)
+    /// Expenses are moved or deleted explicitly before a category is deleted (see `LedgerStore`).
+    /// `.nullify` is the safety net: anything left over becomes uncategorized instead of vanishing.
+    @Relationship(deleteRule: .nullify, inverse: \Expense.category)
     var expenses: [Expense] = []
 
     init(name: String, icon: String = "tag.fill", sortOrder: Int = 0, createdAt: Date = .now) {
@@ -30,12 +33,27 @@ extension Category {
             .reduce(0) { $0 + $1.amount }
     }
 
+    /// Icons offered when creating or editing a category.
+    static let iconChoices: [String] = [
+        "fork.knife", "cart.fill", "cup.and.saucer.fill", "wineglass.fill", "takeoutbag.and.cup.and.straw.fill",
+        "car.fill", "fuelpump.fill", "bus.fill", "airplane", "bicycle",
+        "house.fill", "bolt.fill", "wifi", "phone.fill", "repeat",
+        "laptopcomputer", "chevron.left.forwardslash.chevron.right", "gamecontroller.fill", "tv.fill", "headphones",
+        "tshirt.fill", "bag.fill", "gift.fill", "heart.fill", "cross.case.fill",
+        "figure.golf", "figure.hockey", "dumbbell.fill", "sportscourt.fill", "pawprint.fill",
+        "book.fill", "graduationcap.fill", "wrench.and.screwdriver.fill", "creditcard.fill", "tag.fill",
+    ]
+
     /// Categories inserted on first launch.
     static let defaults: [(name: String, icon: String)] = [
-        ("Food", "fork.knife"),
-        ("Transport", "car.fill"),
-        ("Subscriptions", "repeat"),
-        ("Software", "laptopcomputer"),
-        ("Coffee", "cup.and.saucer.fill"),
+        ("Food", "takeoutbag.and.cup.and.straw.fill"),
+        ("Transportation", "car.fill"),
+        ("Golf", "figure.golf"),
+        ("Hockey", "figure.hockey"),
+        ("Clothes", "bag.fill"),
+        ("Gifts", "gift.fill"),
+        ("Other", "wrench.and.screwdriver.fill"),
+
+
     ]
 }

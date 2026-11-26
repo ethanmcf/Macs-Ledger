@@ -4,7 +4,9 @@ import SwiftData
 struct QuickEntryView: View {
     @Environment(\.modelContext) private var context
 
-    @Query(sort: \Category.sortOrder) private var categories: [Category]
+    /// Hidden categories are left out of quick entry.
+    @Query(filter: #Predicate<Category> { !$0.isHidden }, sort: \Category.sortOrder)
+    private var categories: [Category]
     @Query private var monthExpenses: [Expense]
 
     @State private var amount: String = ""

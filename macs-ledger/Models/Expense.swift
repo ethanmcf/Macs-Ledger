@@ -9,6 +9,10 @@ final class Expense {
     var note: String
     var category: Category?
 
+    static let importedNote = "Imported"
+
+    var isImported: Bool { note == Self.importedNote }
+
     init(amount: Decimal, category: Category?, date: Date = .now, note: String = "") {
         self.amount = amount
         self.category = category
