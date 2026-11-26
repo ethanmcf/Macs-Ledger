@@ -5,7 +5,6 @@ struct QuickEntryView: View {
     @Environment(\.modelContext) private var context
 
     @Query(sort: \Category.sortOrder) private var categories: [Category]
-    /// Only this month's expenses.
     @Query private var monthExpenses: [Expense]
 
     @State private var amount: String = ""
@@ -13,9 +12,8 @@ struct QuickEntryView: View {
     @State private var errorMessage: String?
     @FocusState private var isAmountFocused: Bool
 
-    private let accent = Color.indigo
+    private let accent = Color.appAccent
     private let month: Month
-    /// Called when the panel should close (tap outside, or after saving).
     private let onDismiss: (() -> Void)?
 
     init(month: Month = .current, onDismiss: (() -> Void)? = nil) {
@@ -58,7 +56,7 @@ struct QuickEntryView: View {
                     )
                     .fill(Color(UIColor.systemBackground))
                     .shadow(color: .black.opacity(0.15), radius: 20, y: -4)
-                    .ignoresSafeArea(.container, edges: .bottom)
+                    .ignoresSafeArea(edges: .bottom) // extends behind the keyboard so its rounded corners show white
                 )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -91,7 +89,7 @@ struct QuickEntryView: View {
                 .padding(.top, 4)
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 12)
+        .padding(.bottom, 20)
     }
 
     private var grabber: some View {
@@ -155,15 +153,9 @@ struct QuickEntryView: View {
                 Text(selectedCategory?.name ?? "—")
                     .fontWeight(.semibold)
                 Text(categoryTotal, format: .currency(code: "CAD"))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(Color.appAccentText)
                     .fontWeight(.semibold)
                 Spacer()
-                Text("of")
-                    .foregroundStyle(.secondary)
-                Text(monthlyTotal, format: .currency(code: "CAD"))
-                    .foregroundStyle(.secondary)
-                Text("this month")
-                    .foregroundStyle(.secondary)
             }
             .font(.caption)
             .monospacedDigit()
@@ -175,7 +167,7 @@ struct QuickEntryView: View {
         }
     }
 
-    /// Selected category's share of this month's spending, 0...1.
+    /// Selected category's share of this month's spending
     private var categoryShare: Double {
         guard monthlyTotal > 0 else { return 0 }
         return min(NSDecimalNumber(decimal: categoryTotal / monthlyTotal).doubleValue, 1)
@@ -190,7 +182,7 @@ struct QuickEntryView: View {
                 Text("Add Expense")
             }
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
@@ -208,7 +200,6 @@ struct QuickEntryView: View {
     private func saveEntry() {
         guard let value = parsedAmount, let category = selectedCategory else { return }
         do {
-            // Expenses are filed under the month this panel is showing
             let date = month == .current ? Date.now : month.startDate
             try LedgerStore.addExpense(amount: value, category: category, date: date, in: context)
             amount = ""

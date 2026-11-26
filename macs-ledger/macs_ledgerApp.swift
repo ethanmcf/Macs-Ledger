@@ -5,7 +5,7 @@ import SwiftData
 struct macs_ledgerApp: App {
     var body: some Scene {
         WindowGroup {
-            DashboardView()
+            RootView()
         }
         .modelContainer(for: [Category.self, Expense.self])
     }

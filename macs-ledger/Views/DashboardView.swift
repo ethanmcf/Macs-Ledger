@@ -9,45 +9,33 @@ struct DashboardView: View {
     @Query(sort: \Category.sortOrder) private var categories: [Category]
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
 
-    @State private var presenter = QuickEntryPresenter.shared
+    @State private var showsAllPreviousMonths = false
+    @State private var showsAllCategories = false
 
-    private let accent = Color.indigo
+    private let accent = Color.appAccent
     private let currencyCode = "CAD"
     private let month = Month.current
+    /// Previous months shown before the list is expanded.
+    private let previousMonthsLimit = 12
+    /// Categories shown in the breakdown before it is expanded.
+    private let categoryLimit = 8
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    monthTotalHeader
-                    topCategoriesChart
-                    categoryBreakdown
-                    yearStats
-                    previousMonths
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 96)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                monthTotalHeader
+                categoryBreakdown
+                yearStats
+                previousMonths
+                previousYears
             }
-            .background(Color(UIColor.systemGroupedBackground))
-            // .navigationTitle("Ledger")
-            .overlay(alignment: .bottomTrailing) { addButton }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 96)
         }
-        .fontDesign(.rounded)
-        .tint(accent)
-        .overlay {
-            if presenter.isPresented {
-                QuickEntryView(month: month) {
-                    withAnimation(.snappy) { presenter.isPresented = false }
-                }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.snappy, value: presenter.isPresented)
-        .onAppear { try? LedgerStore.seedDefaultsIfNeeded(in: context) }
+        .background(Color(UIColor.systemGroupedBackground))
     }
 
     // MARK: - Derived data
-
     private func total(_ items: some Sequence<Expense>) -> Decimal {
         items.reduce(0) { $0 + $1.amount }
     }
@@ -96,6 +84,16 @@ struct DashboardView: View {
         monthTotals.filter { $0.month < month }
     }
 
+    /// Earlier years with spending, newest first
+    private var previousYearTotals: [YearTotal] {
+        Dictionary(grouping: monthTotals.filter { $0.month.year < month.year }, by: \.month.year)
+            .map { year, months in
+                let spent = total(months.map(\.amount))
+                return YearTotal(year: year, total: spent, monthlyAverage: spent / Decimal(months.count))
+            }
+            .sorted { $0.year > $1.year }
+    }
+
     private func total(_ amounts: [Decimal]) -> Decimal { amounts.reduce(0, +) }
 
     private func share(_ amount: Decimal, of whole: Decimal) -> Double {
@@ -107,7 +105,7 @@ struct DashboardView: View {
 
     private var monthTotalHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("\(month.title) · so far")
+            Text(month.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             Text(monthTotal, format: .currency(code: currencyCode))
@@ -116,47 +114,8 @@ struct DashboardView: View {
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
-            if let last = monthTotals.first(where: { $0.month == month.previous }) {
-                Text("\(last.amount, format: .currency(code: currencyCode)) spent in \(month.previous.startDate.formatted(.dateTime.month(.wide)))")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
         }
         .padding(.top, 8)
-    }
-
-    private var topCategoriesChart: some View {
-        Card(title: "Top categories") {
-            let top = Array(categoryTotals.prefix(3))
-            if top.isEmpty {
-                emptyState("No spending yet this month")
-            } else {
-                Chart(top) { item in
-                    BarMark(
-                        x: .value("Category", item.name),
-                        y: .value("Amount", item.amount.doubleValue),
-                        width: .ratio(0.55)
-                    )
-                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12, style: .continuous))
-                    .foregroundStyle(accent.gradient)
-                    .annotation(position: .top, spacing: 6) {
-                        Text(item.amount, format: .currency(code: currencyCode).precision(.fractionLength(0)))
-                            .font(.caption.weight(.semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .chartYAxis(.hidden)
-                .chartXAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel()
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(Color.primary)
-                    }
-                }
-                .frame(height: 200)
-            }
-        }
     }
 
     private var categoryBreakdown: some View {
@@ -164,8 +123,10 @@ struct DashboardView: View {
             if categoryTotals.isEmpty {
                 emptyState("Add an expense to see your breakdown")
             } else {
+                let hiddenCount = categoryTotals.count - categoryLimit
+                let items = showsAllCategories ? categoryTotals : Array(categoryTotals.prefix(categoryLimit))
                 VStack(spacing: 14) {
-                    ForEach(categoryTotals) { item in
+                    ForEach(items) { item in
                         VStack(spacing: 6) {
                             HStack(spacing: 10) {
                                 Image(systemName: item.icon)
@@ -176,9 +137,6 @@ struct DashboardView: View {
                                 Text(item.name)
                                     .font(.subheadline.weight(.medium))
                                 Spacer()
-                                Text(share(item.amount, of: monthTotal), format: .percent.precision(.fractionLength(0)))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
                                 Text(item.amount, format: .currency(code: currencyCode))
                                     .font(.subheadline.weight(.semibold))
                             }
@@ -187,6 +145,9 @@ struct DashboardView: View {
                                 .tint(accent)
                                 .padding(.leading, 38)
                         }
+                    }
+                    if hiddenCount > 0 {
+                        expandButton(isExpanded: $showsAllCategories, hiddenCount: hiddenCount)
                     }
                     Divider()
                     HStack {
@@ -203,19 +164,26 @@ struct DashboardView: View {
     }
 
     private var yearStats: some View {
-        HStack(spacing: 12) {
-            StatTile(title: "Spent in \(String(month.year))", value: yearToDate, currencyCode: currencyCode)
-            StatTile(title: "Monthly average", value: monthlyAverage, currencyCode: currencyCode)
+        Card(title: "This year") {
+            HStack(spacing: 16) {
+                yearSummaryStat("Total spent so far", yearToDate)
+                Divider()
+                yearSummaryStat("Monthly average", monthlyAverage)
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var previousMonths: some View {
         Card(title: "Previous months") {
-            let rows = previousMonthTotals
-            if rows.isEmpty {
+            let allRows = previousMonthTotals
+            if allRows.isEmpty {
                 emptyState("Past months will appear here")
             } else {
-                let largest = rows.map(\.amount).max() ?? 0
+                // Scale bars against every month so they don't jump when expanding.
+                let largest = allRows.map(\.amount).max() ?? 0
+                let hiddenCount = allRows.count - previousMonthsLimit
+                let rows = showsAllPreviousMonths ? allRows : Array(allRows.prefix(previousMonthsLimit))
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.month) { index, row in
                         if index > 0 { Divider() }
@@ -236,24 +204,71 @@ struct DashboardView: View {
                         }
                         .padding(.vertical, 12)
                     }
+                    if hiddenCount > 0 {
+                        Divider()
+                        expandButton(isExpanded: $showsAllPreviousMonths, hiddenCount: hiddenCount)
+                            .padding(.top, 12)
+                    }
                 }
             }
         }
     }
 
-    private var addButton: some View {
-        Button {
-            withAnimation(.snappy) { presenter.isPresented = true }
-        } label: {
-            Image(systemName: "plus")
-                .font(.title2.weight(.bold))
-                .foregroundStyle(.white)
-                .frame(width: 60, height: 60)
-                .background(Circle().fill(accent))
-                .shadow(color: accent.opacity(0.35), radius: 12, y: 6)
+    /// One card per earlier year, or a placeholder card when there are none.
+    @ViewBuilder
+    private var previousYears: some View {
+        let rows = previousYearTotals
+        if rows.isEmpty {
+            Card(title: "Previous years") {
+                emptyState("Past years will appear here")
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Previous years")
+                    .font(.headline)
+                    .padding(.leading, 4)
+                ForEach(rows, id: \.year) { row in
+                    Card(title: String(row.year)) {
+                        HStack(spacing: 16) {
+                            yearSummaryStat("Total spent", row.total, font: .title3.weight(.bold))
+                            Divider()
+                            yearSummaryStat("Monthly average", row.monthlyAverage, font: .title3.weight(.bold))
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
         }
-        .padding(20)
-        .accessibilityLabel("Add expense")
+    }
+
+    /// Labeled value used in the current year and Previous years cards.
+    private func yearSummaryStat(_ label: String, _ value: Decimal, font: Font = .title2.weight(.bold)) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value, format: .currency(code: currencyCode))
+                .font(font)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// "Show N more" / "Show less" toggle for a truncated list.
+    private func expandButton(isExpanded: Binding<Bool>, hiddenCount: Int) -> some View {
+        Button {
+            withAnimation(.snappy) { isExpanded.wrappedValue.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Text(isExpanded.wrappedValue ? "Show less" : "Show \(hiddenCount) more")
+                Image(systemName: "chevron.down")
+                    .rotationEffect(.degrees(isExpanded.wrappedValue ? 180 : 0))
+            }
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+        }
     }
 
     private func emptyState(_ message: String) -> some View {
@@ -271,6 +286,12 @@ private struct CategoryTotal: Identifiable {
     let icon: String
     let amount: Decimal
     var id: String { name }
+}
+
+private struct YearTotal {
+    let year: Int
+    let total: Decimal
+    let monthlyAverage: Decimal
 }
 
 private struct Card<Content: View>: View {
@@ -292,36 +313,11 @@ private struct Card<Content: View>: View {
     }
 }
 
-private struct StatTile: View {
-    let title: String
-    let value: Decimal
-    let currencyCode: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value, format: .currency(code: currencyCode))
-                .font(.title2.weight(.bold))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(UIColor.secondarySystemGroupedBackground))
-        )
-    }
-}
-
 private extension Decimal {
     var doubleValue: Double { NSDecimalNumber(decimal: self).doubleValue }
 }
 
 #Preview {
-    DashboardView()
+    NavigationStack { DashboardView() }
         .modelContainer(for: [Category.self, Expense.self], inMemory: true)
 }

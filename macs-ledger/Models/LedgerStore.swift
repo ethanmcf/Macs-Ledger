@@ -49,6 +49,16 @@ enum LedgerStore {
         return expense
     }
 
+    /// Saves edits to an expense. Recomputes its month so it moves if the date changed.
+    static func updateExpense(_ expense: Expense, amount: Decimal, category: Category, date: Date, in context: ModelContext) throws {
+        guard amount > 0 else { throw LedgerError.invalidAmount }
+        expense.amount = amount
+        expense.category = category
+        expense.date = date
+        expense.monthKey = Month(containing: date).key
+        try context.save()
+    }
+
     static func deleteExpense(_ expense: Expense, in context: ModelContext) throws {
         context.delete(expense)
         try context.save()

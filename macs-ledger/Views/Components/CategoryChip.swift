@@ -17,7 +17,7 @@ struct CategoryChip: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .foregroundStyle(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected ? Color.onAccent : .primary)
             .background(
                 Capsule().fill(isSelected ? accent : Color(UIColor.tertiarySystemFill))
             )
@@ -28,8 +28,8 @@ struct CategoryChip: View {
 
 #Preview {
     HStack {
-        CategoryChip(title: "Food", icon: "fork.knife", isSelected: true, accent: .indigo) {}
-        CategoryChip(title: "Coffee", icon: "cup.and.saucer.fill", isSelected: false, accent: .indigo) {}
+        CategoryChip(title: "Food", icon: "fork.knife", isSelected: true, accent: .appAccent) {}
+        CategoryChip(title: "Coffee", icon: "cup.and.saucer.fill", isSelected: false, accent: .appAccent) {}
     }
     .padding()
 }
