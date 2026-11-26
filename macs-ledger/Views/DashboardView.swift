@@ -162,9 +162,11 @@ struct DashboardView: View {
                                         .frame(maxHeight: .infinity)
                                 }
                                 .frame(height: 6)
-                                Text(row.amount, format: .currency(code: currencyCode))
+                                Text(row.amount, format: .currency(code: currencyCode).precision(.fractionLength(0)))
                                     .font(.subheadline.weight(.semibold))
                                     .monospacedDigit()
+                                    .lineLimit(1)
+                                    .fixedSize()
                                 Image(systemName: "chevron.right")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.tertiary)
