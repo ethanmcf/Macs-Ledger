@@ -6,6 +6,7 @@ struct RootView: View {
     @State private var presenter = QuickEntryPresenter.shared
     @State private var page: Page = .dashboard
     @State private var showsSettings = false
+    @State private var showsSplash = true
 
     private let accent = Color.appAccent
 
@@ -48,6 +49,15 @@ struct RootView: View {
             }
         }
         .animation(.snappy, value: presenter.isPresented)
+        .overlay {
+            if showsSplash {
+                SplashView { showsSplash = false }
+            }
+        }
+        // Opened via Back Tap / the quick entry shortcut: skip the splash and go straight to entry.
+        .onChange(of: presenter.isPresented) { _, isPresented in
+            if isPresented { showsSplash = false }
+        }
         .onAppear { try? LedgerStore.seedDefaultsIfNeeded(in: context) }
     }
 
