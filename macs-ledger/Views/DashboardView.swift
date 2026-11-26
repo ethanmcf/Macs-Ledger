@@ -6,7 +6,6 @@ import Charts
 struct DashboardView: View {
     @Environment(\.modelContext) private var context
 
-    @Query(sort: \Category.sortOrder) private var categories: [Category]
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
 
     @State private var showsAllPreviousMonths = false
@@ -47,19 +46,7 @@ struct DashboardView: View {
     private var monthTotal: Decimal { total(thisMonthExpenses) }
 
     /// This month's spending per category, largest first. Only categories with spending.
-    private var categoryTotals: [CategoryTotal] {
-        var sums: [PersistentIdentifier: Decimal] = [:]
-        for expense in thisMonthExpenses {
-            guard let category = expense.category else { continue }
-            sums[category.persistentModelID, default: 0] += expense.amount
-        }
-        return categories
-            .compactMap { category in
-                guard let amount = sums[category.persistentModelID], amount > 0 else { return nil }
-                return CategoryTotal(name: category.name, icon: category.icon, amount: amount)
-            }
-            .sorted { $0.amount > $1.amount }
-    }
+    private var categoryTotals: [CategoryTotal] { CategoryTotal.totals(for: thisMonthExpenses) }
 
     /// Spending per month, newest first, for months that have spending.
     private var monthTotals: [(month: Month, amount: Decimal)] {
@@ -126,38 +113,12 @@ struct DashboardView: View {
                 let hiddenCount = categoryTotals.count - categoryLimit
                 let items = showsAllCategories ? categoryTotals : Array(categoryTotals.prefix(categoryLimit))
                 VStack(spacing: 14) {
-                    ForEach(items) { item in
-                        VStack(spacing: 6) {
-                            HStack(spacing: 10) {
-                                Image(systemName: item.icon)
-                                    .font(.footnote)
-                                    .foregroundStyle(accent)
-                                    .frame(width: 28, height: 28)
-                                    .background(Circle().fill(accent.opacity(0.12)))
-                                Text(item.name)
-                                    .font(.subheadline.weight(.medium))
-                                Spacer()
-                                Text(item.amount, format: .currency(code: currencyCode))
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                            .monospacedDigit()
-                            ProgressView(value: share(item.amount, of: monthTotal))
-                                .tint(accent)
-                                .padding(.leading, 38)
-                        }
-                    }
+                    CategoryBreakdownRows(items: items, total: monthTotal, currencyCode: currencyCode)
                     if hiddenCount > 0 {
                         expandButton(isExpanded: $showsAllCategories, hiddenCount: hiddenCount)
                     }
                     Divider()
-                    HStack {
-                        Text("Total")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text(monthTotal, format: .currency(code: currencyCode))
-                            .font(.headline)
-                            .monospacedDigit()
-                    }
+                    BreakdownTotalRow(total: monthTotal, currencyCode: currencyCode)
                 }
             }
         }
@@ -187,22 +148,31 @@ struct DashboardView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.month) { index, row in
                         if index > 0 { Divider() }
-                        HStack(spacing: 12) {
-                            Text(row.month.title)
-                                .font(.subheadline)
-                                .frame(width: 130, alignment: .leading)
-                            GeometryReader { geo in
-                                Capsule()
-                                    .fill(accent.opacity(0.25))
-                                    .frame(width: max(4, geo.size.width * share(row.amount, of: largest)))
-                                    .frame(maxHeight: .infinity)
+                        NavigationLink {
+                            MonthDetailView(month: row.month)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text(row.month.title)
+                                    .font(.subheadline)
+                                    .frame(width: 130, alignment: .leading)
+                                GeometryReader { geo in
+                                    Capsule()
+                                        .fill(accent.opacity(0.25))
+                                        .frame(width: max(4, geo.size.width * share(row.amount, of: largest)))
+                                        .frame(maxHeight: .infinity)
+                                }
+                                .frame(height: 6)
+                                Text(row.amount, format: .currency(code: currencyCode))
+                                    .font(.subheadline.weight(.semibold))
+                                    .monospacedDigit()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
                             }
-                            .frame(height: 6)
-                            Text(row.amount, format: .currency(code: currencyCode))
-                                .font(.subheadline.weight(.semibold))
-                                .monospacedDigit()
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
                         }
-                        .padding(.vertical, 12)
+                        .buttonStyle(.plain)
                     }
                     if hiddenCount > 0 {
                         Divider()
@@ -281,40 +251,10 @@ struct DashboardView: View {
 
 // MARK: - Supporting types
 
-private struct CategoryTotal: Identifiable {
-    let name: String
-    let icon: String
-    let amount: Decimal
-    var id: String { name }
-}
-
 private struct YearTotal {
     let year: Int
     let total: Decimal
     let monthlyAverage: Decimal
-}
-
-private struct Card<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(title)
-                .font(.headline)
-            content
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(UIColor.secondarySystemGroupedBackground))
-        )
-    }
-}
-
-private extension Decimal {
-    var doubleValue: Double { NSDecimalNumber(decimal: self).doubleValue }
 }
 
 #Preview {
