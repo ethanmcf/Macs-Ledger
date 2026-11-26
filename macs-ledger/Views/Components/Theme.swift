@@ -4,7 +4,7 @@ import UIKit
 /// App-wide colors. Change them here to restyle every screen.
 extension Color {
     /// Main accent. Used for fills, bars, chips and buttons.
-    static let appAccent = Color.indigo
+    static let appAccent = Color.blue //Color(red: 0.008, green: 0.243, blue: 0.541)
     /// Accent-colored text. Same as the accent; split out in case a lighter accent needs darker text.
     static let appAccentText = Color.indigo
     /// Text and icons placed on top of an `appAccent` fill.

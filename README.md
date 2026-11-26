@@ -26,14 +26,13 @@ With a free Apple ID, the app stops opening after **7 days**. Run the script aga
    cp .env.example .env
    xcrun devicectl list devices
    ```
-   Copy your phone's identifier from the list into `.env`:
    ```
-   IPHONE_UDID=your-phone-identifier
+   IPHONE_UDID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
    ```
 
 ### Install or refresh the app
 
-Make sure your phone is unlocked and on the same Wi-Fi as your Mac, then run:
+Make sure your phone is unlocked and on the same Wi-Fi as your Mac (or plugged in with a cable), then run:
 
 ```sh
 ./scripts/install-on-phone.sh
