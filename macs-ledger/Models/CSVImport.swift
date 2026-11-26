@@ -281,15 +281,18 @@ struct CSVImport {
         for expense in previous {
             guard let category = expense.category else { continue }
             if sums[Key(monthKey: expense.monthKey, category: category.persistentModelID)] != nil {
+                try LedgerStore.recordChange(.delete, expense, in: context)
                 context.delete(expense)
             }
         }
 
-        // 4. Insert.
+        // 4. Insert. Each one is also queued for the Google Sheet backup.
         for entry in sums.values where entry.amount > 0 {
-            context.insert(Expense(amount: entry.amount, category: entry.category, date: entry.month.startDate, note: note))
+            let expense = Expense(amount: entry.amount, category: entry.category, date: entry.month.startDate, note: note)
+            context.insert(expense)
+            try LedgerStore.recordChange(.upsert, expense, in: context)
         }
-        try context.save()
+        try LedgerStore.saveAndSync(context)
         return sums.count
     }
 

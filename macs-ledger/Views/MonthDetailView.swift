@@ -55,5 +55,5 @@ struct MonthDetailView: View {
 
 #Preview {
     NavigationStack { MonthDetailView(month: .current) }
-        .modelContainer(for: [Category.self, Expense.self], inMemory: true)
+        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

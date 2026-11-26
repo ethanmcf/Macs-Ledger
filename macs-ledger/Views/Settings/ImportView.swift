@@ -244,5 +244,5 @@ struct ImportView: View {
 
 #Preview {
     NavigationStack { ImportView() }
-        .modelContainer(for: [Category.self, Expense.self], inMemory: true)
+        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

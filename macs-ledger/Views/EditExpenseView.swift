@@ -114,7 +114,7 @@ struct EditExpenseView: View {
 
 #Preview {
     let container = try! ModelContainer(
-        for: Category.self, Expense.self,
+        for: Category.self, Expense.self, PendingChange.self,
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
     let category = Category(name: "Food", icon: "fork.knife")

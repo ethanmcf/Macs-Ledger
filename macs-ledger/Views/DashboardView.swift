@@ -261,5 +261,5 @@ private struct YearTotal {
 
 #Preview {
     NavigationStack { DashboardView() }
-        .modelContainer(for: [Category.self, Expense.self], inMemory: true)
+        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }
