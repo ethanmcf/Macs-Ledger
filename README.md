@@ -8,8 +8,9 @@ A simple iPhone app for tracking what you spend.
 - **Transactions** – browse, edit, or delete past expenses.
 - **Categories** – add, rename, reorder, or hide your own categories.
 - **CSV import** – bring in past monthly totals from a spreadsheet.
+- **Google Sheets backup** – every change is copied to a Google Sheet you own, even ones made offline.
 
-Your data stays on your phone. 
+Your data stays on your phone, plus a copy in your own Google Sheet if you turn on the backup.
 
 ## Install the app on your iPhone
 
@@ -38,3 +39,48 @@ Make sure your phone is unlocked and on the same Wi-Fi as your Mac (or plugged i
 ./scripts/install-on-phone.sh
 ```
 
+## Back up to a Google Sheet
+
+The app can copy every expense and category to a Google Sheet. If you delete the app or get a new phone, you can restore everything from the sheet. You can also view and edit your data in Google Sheets.
+
+A small script attached to the sheet (`scripts/google-sheet/Code.gs`) receives the changes. You don't need to host a server.
+
+### One-time setup
+
+1. **Make up a token.** It works like a password between the app and the sheet. Generate one in Terminal:
+   ```sh
+   openssl rand -hex 24
+   ```
+2. **Create a Google Sheet**, then open **Extensions → Apps Script**. Delete what's there, paste in the contents of `scripts/google-sheet/Code.gs`, and save.
+3. **Add the token to the script.** In Apps Script, click the gear (**Project Settings**) → **Script Properties** → **Add script property**. Name: `TOKEN`. Value: your token.
+4. **Deploy it.** Click **Deploy → New deployment**, then the gear → **Web app**:
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+
+   Click **Deploy** and allow access to your sheet. Google warns that the app is unverified, because it's your own script: choose **Advanced → Go to project**. Copy the **Web app URL**. It ends in `/exec`.
+5. **Connect the app.** On your phone, tap the gear → **Backup to Google Sheet**. Paste the URL and the token, then tap **Save**.
+6. **Tap Back Up Everything.** The sheet gets two tabs, **Transactions** and **Categories**, filled with your data.
+
+Keep the URL and token private. Together they give read and write access to your spending data. The app stores them in the iPhone's Keychain.
+
+### How it works
+
+- **Automatic.** Each change uploads a couple of seconds after you make it. You don't need to tap anything.
+- **Offline.** Changes wait on the phone (Settings › Backup shows "Waiting to upload") and upload by themselves when you're back online.
+- **Back Up Now** sends anything still waiting. **Back Up Everything** re-sends all your data. Use it the first time, or to repair the sheet.
+- **Update from Google Sheet** brings the sheet's data into the app. Use it to restore after a reinstall, or after editing rows in the sheet. When the app and the sheet disagree, the newer change wins.
+
+### Editing in the sheet
+
+- You can edit amounts, dates, notes and categories directly in the sheet, then tap **Update from Google Sheet** in the app.
+- You can type in new rows. They get an ID automatically.
+- **To delete a row, set its `deleted` column to `TRUE`.** Don't remove the row; a removed row gets uploaded again on the next update.
+- If you mark a category deleted while it still has expenses in the app, the app hides it instead. To decide what happens to its expenses, delete it in the app under Settings › Categories.
+- Don't rename or reorder the columns. You can add your own columns to the right, or extra tabs.
+- Deleted rows stay in the sheet, so leave them out of your own totals, e.g. `=SUMIFS(Transactions!D:D, Transactions!H:H, FALSE)`.
+
+### Changing things later
+
+- **Finding the web app URL again:** in Apps Script, open **Deploy → Manage deployments** and copy it there. Don't create a new deployment, because that gives you a different URL.
+- **After editing `Code.gs`:** open **Deploy → Manage deployments**, edit the deployment, and choose **Version: New version**. The URL stays the same.
+- **Changing the token:** update it in Script Properties *and* in the app. Until both match, backups fail with "Wrong token".
