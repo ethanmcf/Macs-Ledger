@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D677D0A030ABDB80003D89EB /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = D677D0A230ABDB80003D89EB /* FirebaseFirestore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		D677D07E30ABDB75003D89EB /* macs-ledger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "macs-ledger.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D677D0A030ABDB80003D89EB /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = "macs-ledger";
 			packageProductDependencies = (
+				D677D0A230ABDB80003D89EB /* FirebaseFirestore */,
 			);
 			productName = "macs-ledger";
 			productReference = D677D07E30ABDB75003D89EB /* macs-ledger.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = D677D07530ABDB75003D89EB;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D677D0A130ABDB80003D89EB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D677D07F30ABDB75003D89EB /* Products */;
 			projectDirPath = "";
@@ -332,6 +341,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D677D0A130ABDB80003D89EB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 13.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D677D0A230ABDB80003D89EB /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D677D0A130ABDB80003D89EB /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D677D07630ABDB75003D89EB /* Project object */;
 }

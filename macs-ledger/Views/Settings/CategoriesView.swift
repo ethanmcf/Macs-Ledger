@@ -1,10 +1,9 @@
 import SwiftUI
-import SwiftData
 
 /// List of categories: tap to edit, drag to reorder, + to add.
 struct CategoriesView: View {
-    @Environment(\.modelContext) private var context
-    @Query(sort: \Category.sortOrder) private var categories: [Category]
+    @Environment(LedgerStore.self) private var store
+    private var categories: [Category] { store.categories }
 
     @State private var isAdding = false
 
@@ -38,7 +37,8 @@ struct CategoriesView: View {
     }
 
     private func row(_ category: Category) -> some View {
-        HStack(spacing: 12) {
+        let count = store.expenses(in: category).count
+        return HStack(spacing: 12) {
             Image(systemName: category.icon)
                 .font(.footnote)
                 .foregroundStyle(category.isHidden ? Color.secondary : accent)
@@ -48,7 +48,7 @@ struct CategoriesView: View {
                 Text(category.name)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(category.isHidden ? .secondary : .primary)
-                Text("\(category.expenses.count) \(category.expenses.count == 1 ? "expense" : "expenses")")
+                Text("\(count) \(count == 1 ? "expense" : "expenses")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -64,11 +64,6 @@ struct CategoriesView: View {
     private func move(from source: IndexSet, to destination: Int) {
         var reordered = categories
         reordered.move(fromOffsets: source, toOffset: destination)
-        try? LedgerStore.reorder(reordered, in: context)
+        store.reorder(reordered)
     }
-}
-
-#Preview {
-    NavigationStack { CategoriesView() }
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

@@ -11,3 +11,6 @@ build/
 
 # Local settings (device ID)
 .env
+
+# Firebase config (download from the Firebase console; see README)
+GoogleService-Info.plist

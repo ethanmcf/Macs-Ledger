@@ -1,43 +1,46 @@
 import Foundation
-import SwiftData
+import FirebaseFirestore
 
-@Model
-final class Category {
-    @Attribute(.unique) var name: String
+/// A spending category. Stored at `ledgers/{key}/categories/{id}`, where `id` is Firestore's auto ID.
+struct Category: Identifiable, Hashable {
+    let id: String
+    var name: String
     /// SF Symbol name shown on the category chip.
     var icon: String
     /// Position in the chip list (lower comes first).
     var sortOrder: Int
     var createdAt: Date
     /// Hidden categories don't appear in quick entry but keep their history.
-    var isHidden: Bool = false
-    /// Stable ID used to match this category to its row in the Google Sheet backup (see `Expense.uuid`).
-    var uuid: UUID?
-    /// Last local change; nil until the category has been recorded for backup.
-    var updatedAt: Date?
+    var isHidden: Bool
 
-    /// Expenses are moved or deleted explicitly before a category is deleted (see `LedgerStore`).
-    /// `.nullify` is the safety net: anything left over becomes uncategorized instead of vanishing.
-    @Relationship(deleteRule: .nullify, inverse: \Expense.category)
-    var expenses: [Expense] = []
-
-    init(name: String, icon: String = "tag.fill", sortOrder: Int = 0, createdAt: Date = .now) {
+    init(id: String, name: String, icon: String = "tag.fill", sortOrder: Int = 0, createdAt: Date = .now, isHidden: Bool = false) {
+        self.id = id
         self.name = name
         self.icon = icon
         self.sortOrder = sortOrder
         self.createdAt = createdAt
-        self.uuid = UUID()
+        self.isHidden = isHidden
+    }
+
+    init(document: QueryDocumentSnapshot) {
+        let data = document.data()
+        self.init(
+            id: document.documentID,
+            name: data["name"] as? String ?? "",
+            icon: data["icon"] as? String ?? "tag.fill",
+            sortOrder: data["sortOrder"] as? Int ?? 0,
+            createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? .distantPast,
+            isHidden: data["hidden"] as? Bool ?? false
+        )
+    }
+
+    /// The document's fields, as written to Firestore.
+    var fields: [String: Any] {
+        ["name": name, "icon": icon, "sortOrder": sortOrder, "createdAt": Timestamp(date: createdAt), "hidden": isHidden]
     }
 }
 
 extension Category {
-    /// Sum of this category's expenses for the given month.
-    func total(for month: Month) -> Decimal {
-        expenses
-            .filter { $0.monthKey == month.key }
-            .reduce(0) { $0 + $1.amount }
-    }
-
     /// Icons offered when creating or editing a category.
     static let iconChoices: [String] = [
         "fork.knife", "cart.fill", "cup.and.saucer.fill", "wineglass.fill", "takeoutbag.and.cup.and.straw.fill",
@@ -49,7 +52,7 @@ extension Category {
         "book.fill", "graduationcap.fill", "wrench.and.screwdriver.fill", "creditcard.fill", "tag.fill",
     ]
 
-    /// Categories inserted on first launch.
+    /// Categories added to a brand-new ledger.
     static let defaults: [(name: String, icon: String)] = [
         ("Food", "takeoutbag.and.cup.and.straw.fill"),
         ("Transportation", "car.fill"),
@@ -58,7 +61,5 @@ extension Category {
         ("Clothes", "bag.fill"),
         ("Gifts", "gift.fill"),
         ("Other", "wrench.and.screwdriver.fill"),
-
-
     ]
 }

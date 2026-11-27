@@ -1,7 +1,6 @@
 import SwiftUI
-import SwiftData
 
-/// Opened from the gear button: manage categories, import old data, and set up the Google Sheet backup.
+/// Opened from the gear button: manage categories, import old data, and see cloud sync.
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -19,9 +18,9 @@ struct SettingsView: View {
                     Label("Import from CSV", systemImage: "square.and.arrow.down")
                 }
                 NavigationLink {
-                    BackupView()
+                    CloudSyncView()
                 } label: {
-                    Label("Backup to Google Sheet", systemImage: "icloud")
+                    Label("Cloud Sync", systemImage: "icloud")
                 }
             }
             .navigationTitle("Settings")
@@ -35,9 +34,4 @@ struct SettingsView: View {
         .fontDesign(.rounded)
         .tint(Color.appAccent)
     }
-}
-
-#Preview {
-    SettingsView()
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

@@ -1,12 +1,11 @@
 import SwiftUI
-import SwiftData
-import Charts
 
 /// Main page: this month's spending, top categories, year-to-date stats and month history.
 struct DashboardView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(LedgerStore.self) private var store
 
-    @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
+    /// Newest first.
+    private var expenses: [Expense] { store.expenses }
 
     @State private var showsAllPreviousMonths = false
     @State private var showsAllCategories = false
@@ -46,7 +45,7 @@ struct DashboardView: View {
     private var monthTotal: Decimal { total(thisMonthExpenses) }
 
     /// This month's spending per category, largest first. Only categories with spending.
-    private var categoryTotals: [CategoryTotal] { CategoryTotal.totals(for: thisMonthExpenses) }
+    private var categoryTotals: [CategoryTotal] { CategoryTotal.totals(for: thisMonthExpenses, in: store) }
 
     /// Spending per month, newest first, for months that have spending.
     private var monthTotals: [(month: Month, amount: Decimal)] {
@@ -257,9 +256,4 @@ private struct YearTotal {
     let year: Int
     let total: Decimal
     let monthlyAverage: Decimal
-}
-
-#Preview {
-    NavigationStack { DashboardView() }
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

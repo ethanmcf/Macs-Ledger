@@ -1,8 +1,6 @@
 import SwiftUI
-import SwiftData
 
 struct RootView: View {
-    @Environment(\.modelContext) private var context
     @State private var presenter = QuickEntryPresenter.shared
     @State private var page: Page = .dashboard
     @State private var showsSettings = false
@@ -58,7 +56,6 @@ struct RootView: View {
         .onChange(of: presenter.isPresented) { _, isPresented in
             if isPresented { showsSplash = false }
         }
-        .onAppear { try? LedgerStore.seedDefaultsIfNeeded(in: context) }
     }
 
     /// Shows the page only when it's selected, without removing it from the screen.
@@ -84,9 +81,4 @@ struct RootView: View {
         .padding(20)
         .accessibilityLabel("Add expense")
     }
-}
-
-#Preview {
-    RootView()
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

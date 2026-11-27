@@ -1,11 +1,10 @@
 import SwiftUI
-import SwiftData
 
 /// Create a category (`category == nil`) or edit, hide and delete an existing one.
 struct CategoryEditView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(LedgerStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Category.sortOrder) private var allCategories: [Category]
+    private var allCategories: [Category] { store.categories }
 
     let category: Category?
 
@@ -28,12 +27,10 @@ struct CategoryEditView: View {
 
     private var isNew: Bool { category == nil }
     /// The category, unless it has just been deleted (this screen is still closing).
-    private var liveCategory: Category? {
-        guard let category, category.modelContext != nil, !category.isDeleted else { return nil }
-        return category
-    }
-    private var expenseCount: Int { liveCategory?.expenses.count ?? 0 }
-    private var expenseTotal: Decimal { liveCategory?.expenses.reduce(0) { $0 + $1.amount } ?? 0 }
+    private var liveCategory: Category? { store.category(id: category?.id) }
+    private var liveExpenses: [Expense] { liveCategory.map(store.expenses(in:)) ?? [] }
+    private var expenseCount: Int { liveExpenses.count }
+    private var expenseTotal: Decimal { liveExpenses.reduce(0) { $0 + $1.amount } }
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
@@ -65,7 +62,7 @@ struct CategoryEditView: View {
                 Section {
                     Toggle("Hide from quick entry", isOn: $isHidden)
                         .onChange(of: isHidden) { _, hidden in
-                            try? LedgerStore.setHidden(hidden, for: category, in: context)
+                            store.setHidden(hidden, for: category)
                         }
                 } footer: {
                     Text("Hidden categories still count in your totals and history.")
@@ -98,14 +95,14 @@ struct CategoryEditView: View {
             if let category = liveCategory {
                 if expenseCount == 0 {
                     Button("Delete", role: .destructive) {
-                        run { try LedgerStore.deleteCategoryAndExpenses(category, in: context) }
+                        run { store.deleteCategoryAndExpenses(category) }
                     }
                 } else {
                     if allCategories.count > 1 {
                         Button("Move Expenses to Another Category…") { choosingMoveTarget = true }
                     }
                     Button("Delete Category and Its Expenses", role: .destructive) {
-                        run { try LedgerStore.deleteCategoryAndExpenses(category, in: context) }
+                        run { store.deleteCategoryAndExpenses(category) }
                     }
                 }
             }
@@ -116,9 +113,9 @@ struct CategoryEditView: View {
         }
         .sheet(isPresented: $choosingMoveTarget) {
             if let category = liveCategory {
-                MoveExpensesView(source: category, candidates: allCategories.filter { $0 != category }) { destination in
+                MoveExpensesView(source: category, candidates: allCategories.filter { $0.id != category.id }) { destination in
                     choosingMoveTarget = false
-                    run { try LedgerStore.deleteCategory(category, movingExpensesTo: destination, in: context) }
+                    run { store.deleteCategory(category, movingExpensesTo: destination) }
                 }
             }
         }
@@ -138,10 +135,10 @@ struct CategoryEditView: View {
 
     private func save() {
         run {
-            if let category {
-                try LedgerStore.updateCategory(category, name: trimmedName, icon: icon, in: context)
-            } else {
-                try LedgerStore.addCategory(name: trimmedName, icon: icon, in: context)
+            if let category = liveCategory {
+                try store.updateCategory(category, name: trimmedName, icon: icon)
+            } else if isNew {
+                try store.addCategory(name: trimmedName, icon: icon)
             }
         }
     }
@@ -184,9 +181,4 @@ private struct MoveExpensesView: View {
             }
         }
     }
-}
-
-#Preview {
-    NavigationStack { CategoryEditView(category: nil) }
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

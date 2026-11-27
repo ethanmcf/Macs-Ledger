@@ -1,24 +1,19 @@
 import SwiftUI
-import SwiftData
 
 /// One month's total and its spending per category. Opened from Previous months.
 struct MonthDetailView: View {
     let month: Month
 
-    @Query private var expenses: [Expense]
+    @Environment(LedgerStore.self) private var store
 
     private let currencyCode = "CAD"
 
-    init(month: Month) {
-        self.month = month
-        let key = month.key
-        _expenses = Query(filter: #Predicate<Expense> { $0.monthKey == key })
-    }
+    private var expenses: [Expense] { store.expenses(for: month) }
 
     private var total: Decimal { expenses.reduce(0) { $0 + $1.amount } }
 
     var body: some View {
-        let items = CategoryTotal.totals(for: expenses)
+        let items = CategoryTotal.totals(for: expenses, in: store)
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 Text(total, format: .currency(code: currencyCode))
@@ -51,9 +46,4 @@ struct MonthDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .fontDesign(.rounded)
     }
-}
-
-#Preview {
-    NavigationStack { MonthDetailView(month: .current) }
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// One category's spending for a period.
 struct CategoryTotal: Identifiable {
@@ -9,11 +8,11 @@ struct CategoryTotal: Identifiable {
     var id: String { name }
 
     /// Spending per category for the given expenses, largest first. Only categories with spending.
-    static func totals(for expenses: some Sequence<Expense>) -> [CategoryTotal] {
-        var sums: [PersistentIdentifier: (category: Category, amount: Decimal)] = [:]
+    static func totals(for expenses: some Sequence<Expense>, in store: LedgerStore) -> [CategoryTotal] {
+        var sums: [String: (category: Category, amount: Decimal)] = [:]
         for expense in expenses {
-            guard let category = expense.category else { continue }
-            sums[category.persistentModelID, default: (category, 0)].amount += expense.amount
+            guard let category = store.category(id: expense.categoryId) else { continue }
+            sums[category.id, default: (category, 0)].amount += expense.amount
         }
         return sums.values
             .filter { $0.amount > 0 }

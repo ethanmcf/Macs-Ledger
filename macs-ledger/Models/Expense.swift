@@ -1,30 +1,55 @@
 import Foundation
-import SwiftData
+import FirebaseFirestore
 
-@Model
-final class Expense {
+/// One expense. Stored at `ledgers/{key}/expenses/{id}`, where `id` is Firestore's auto ID.
+struct Expense: Identifiable, Hashable {
+    let id: String
     var amount: Decimal
     var date: Date
-    var monthKey: Int = 0
+    var monthKey: Int
     var note: String
-    var category: Category?
-    /// Stable ID used to match this expense to its row in the Google Sheet backup.
-    /// Optional so existing data migrates cleanly; `LedgerStore.prepareForSync` fills in missing ones.
-    var uuid: UUID?
-    /// Last local change, used to decide whether the app or the sheet has the newer version.
-    /// Nil until the expense has been recorded for backup.
-    var updatedAt: Date?
+    /// The category's document ID. Nil means uncategorized.
+    var categoryId: String?
 
     static let importedNote = "Imported"
 
     var isImported: Bool { note == Self.importedNote }
 
-    init(amount: Decimal, category: Category?, date: Date = .now, note: String = "") {
+    init(id: String, amount: Decimal, categoryId: String?, date: Date = .now, note: String = "") {
+        self.id = id
         self.amount = amount
-        self.category = category
+        self.categoryId = categoryId
         self.date = date
         self.monthKey = Month(containing: date).key
         self.note = note
-        self.uuid = UUID()
+    }
+
+    init(document: QueryDocumentSnapshot) {
+        let data = document.data()
+        let date = (data["date"] as? Timestamp)?.dateValue() ?? .distantPast
+        self.id = document.documentID
+        self.amount = Self.decimal(fromStored: data["amount"])
+        self.date = date
+        self.monthKey = data["monthKey"] as? Int ?? Month(containing: date).key
+        self.note = data["note"] as? String ?? ""
+        self.categoryId = data["categoryId"] as? String
+    }
+
+    var fields: [String: Any] {
+        var fields: [String: Any] = [
+            "amount": NSDecimalNumber(decimal: amount).doubleValue,
+            "date": Timestamp(date: date),
+            "monthKey": monthKey,
+            "note": note,
+        ]
+        fields["categoryId"] = categoryId ?? NSNull()
+        return fields
+    }
+
+    /// A stored number back to an exact amount in cents (42.18 stays 42.18, not 42.179999…).
+    private static func decimal(fromStored value: Any?) -> Decimal {
+        let number = (value as? NSNumber)?.doubleValue ?? 0
+        let cents = (number * 100).rounded()
+        return Decimal(Int64(cents)) / 100
     }
 }

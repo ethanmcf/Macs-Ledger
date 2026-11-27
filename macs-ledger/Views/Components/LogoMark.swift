@@ -74,8 +74,3 @@ extension UnevenRoundedRectangle {
         static let bottomTrailing = Corners(rawValue: 1 << 3)
     }
 }
-
-#Preview {
-    LogoMark()
-        .frame(width: 200, height: 200)
-}

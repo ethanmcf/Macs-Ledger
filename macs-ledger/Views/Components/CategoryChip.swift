@@ -25,11 +25,3 @@ struct CategoryChip: View {
         .buttonStyle(.plain)
     }
 }
-
-#Preview {
-    HStack {
-        CategoryChip(title: "Food", icon: "fork.knife", isSelected: true, accent: .appAccent) {}
-        CategoryChip(title: "Coffee", icon: "cup.and.saucer.fill", isSelected: false, accent: .appAccent) {}
-    }
-    .padding()
-}

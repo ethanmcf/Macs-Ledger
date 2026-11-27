@@ -1,16 +1,15 @@
+
 import SwiftUI
-import SwiftData
 
 /// Sheet for changing or deleting one expense.
 struct EditExpenseView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(LedgerStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Category.sortOrder) private var categories: [Category]
 
     let expense: Expense
 
     @State private var amount: String
-    @State private var category: Category?
+    @State private var categoryId: String?
     @State private var date: Date
     @State private var confirmingDelete = false
     @State private var errorMessage: String?
@@ -18,14 +17,16 @@ struct EditExpenseView: View {
     init(expense: Expense) {
         self.expense = expense
         _amount = State(initialValue: expense.amount.formatted(.number.precision(.fractionLength(2)).grouping(.never)))
-        _category = State(initialValue: expense.category)
+        _categoryId = State(initialValue: expense.categoryId)
         _date = State(initialValue: expense.date)
     }
 
     /// Visible categories, plus this expense's own category even if it's hidden.
     private var pickerCategories: [Category] {
-        categories.filter { !$0.isHidden || $0 == expense.category }
+        store.categories.filter { !$0.isHidden || $0.id == expense.categoryId }
     }
+
+    private var category: Category? { store.category(id: categoryId) }
 
     private var parsedAmount: Decimal? {
         guard let value = Decimal(string: amount, locale: .current), value > 0 else { return nil }
@@ -47,9 +48,9 @@ struct EditExpenseView: View {
                 Section {
                     LabeledContent("Category") {
                         Menu {
-                            Picker("Category", selection: $category) {
+                            Picker("Category", selection: $categoryId) {
                                 ForEach(pickerCategories) { item in
-                                    Label(item.name, systemImage: item.icon).tag(Optional(item))
+                                    Label(item.name, systemImage: item.icon).tag(Optional(item.id))
                                 }
                             }
                         } label: {
@@ -88,7 +89,7 @@ struct EditExpenseView: View {
             }
             .confirmationDialog("Delete this transaction?", isPresented: $confirmingDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
-                    try? LedgerStore.deleteExpense(expense, in: context)
+                    store.deleteExpense(expense)
                     dismiss()
                 }
             }
@@ -104,23 +105,10 @@ struct EditExpenseView: View {
     private func save() {
         guard let value = parsedAmount, let category else { return }
         do {
-            try LedgerStore.updateExpense(expense, amount: value, category: category, date: date, in: context)
+            try store.updateExpense(expense, amount: value, category: category, date: date)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
-}
-
-#Preview {
-    let container = try! ModelContainer(
-        for: Category.self, Expense.self, PendingChange.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
-    let category = Category(name: "Food", icon: "fork.knife")
-    container.mainContext.insert(category)
-    let expense = Expense(amount: 24.50, category: category)
-    container.mainContext.insert(expense)
-    return EditExpenseView(expense: expense)
-        .modelContainer(container)
 }

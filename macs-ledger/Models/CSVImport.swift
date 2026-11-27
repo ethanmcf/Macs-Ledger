@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 /// A parsed CSV of monthly totals per category, e.g.
 ///
@@ -225,7 +224,8 @@ struct CSVImport {
 
     enum Target: Hashable {
         case skip
-        case existing(PersistentIdentifier)
+        /// An existing category's document ID.
+        case existing(String)
         case create(String)
     }
 
@@ -244,55 +244,48 @@ struct CSVImport {
     /// category, and adds one expense per category per month dated the 1st.
     /// Returns how many expenses were added.
     @discardableResult
-    func apply(targets: [Int: Target], fallbackYear: Int, in context: ModelContext) throws -> Int {
-        // 1. Resolve each column to a category, creating new ones as needed.
-        var categoryForColumn: [Int: Category] = [:]
-        var categories = try context.fetch(FetchDescriptor<Category>())
+    func apply(targets: [Int: Target], fallbackYear: Int, in store: LedgerStore) throws -> Int {
+        // 1. Resolve each column to a category ID, creating new categories as needed.
+        var categoryForColumn: [Int: String] = [:]
+        var categories = store.categories
         for column in categoryColumns {
             switch targets[column.index] ?? .skip {
             case .skip:
                 continue
             case .existing(let id):
-                categoryForColumn[column.index] = categories.first { $0.persistentModelID == id }
+                categoryForColumn[column.index] = id
             case .create(let rawName):
                 let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
                 if let match = categories.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
-                    categoryForColumn[column.index] = match
+                    categoryForColumn[column.index] = match.id
                 } else {
-                    let created = try LedgerStore.addCategory(name: name, icon: Self.guessIcon(for: name), in: context)
+                    let created = try store.addCategory(name: name, icon: Self.guessIcon(for: name))
                     categories.append(created)
-                    categoryForColumn[column.index] = created
+                    categoryForColumn[column.index] = created.id
                 }
             }
         }
 
         // 2. Sum per month and category (two columns can point at the same category).
-        struct Key: Hashable { let monthKey: Int; let category: PersistentIdentifier }
-        var sums: [Key: (month: Month, category: Category, amount: Decimal)] = [:]
+        struct Key: Hashable { let monthKey: Int; let categoryId: String }
+        var sums: [Key: (month: Month, amount: Decimal)] = [:]
         for item in plannedAmounts(targets: targets, fallbackYear: fallbackYear) {
-            guard let category = categoryForColumn[item.column] else { continue }
-            let key = Key(monthKey: item.month.key, category: category.persistentModelID)
-            sums[key, default: (item.month, category, 0)].amount += item.amount
+            guard let categoryId = categoryForColumn[item.column] else { continue }
+            sums[Key(monthKey: item.month.key, categoryId: categoryId), default: (item.month, 0)].amount += item.amount
         }
 
         // 3. Replace earlier imports for the same month + category. Hand-entered expenses are untouched.
-        let note = Expense.importedNote
-        let previous = try context.fetch(FetchDescriptor<Expense>(predicate: #Predicate { $0.note == note }))
-        for expense in previous {
-            guard let category = expense.category else { continue }
-            if sums[Key(monthKey: expense.monthKey, category: category.persistentModelID)] != nil {
-                try LedgerStore.recordChange(.delete, expense, in: context)
-                context.delete(expense)
-            }
-        }
+        var changes: [LedgerStore.Change] = store.expenses
+            .filter { $0.isImported }
+            .filter { expense in expense.categoryId.map { sums[Key(monthKey: expense.monthKey, categoryId: $0)] != nil } ?? false }
+            .map { .deleteExpense($0.id) }
 
-        // 4. Insert. Each one is also queued for the Google Sheet backup.
-        for entry in sums.values where entry.amount > 0 {
-            let expense = Expense(amount: entry.amount, category: entry.category, date: entry.month.startDate, note: note)
-            context.insert(expense)
-            try LedgerStore.recordChange(.upsert, expense, in: context)
+        // 4. Add the new totals.
+        for (key, entry) in sums where entry.amount > 0 {
+            changes.append(.setExpense(Expense(id: store.newID(), amount: entry.amount, categoryId: key.categoryId,
+                                               date: entry.month.startDate, note: Expense.importedNote)))
         }
-        try LedgerStore.saveAndSync(context)
+        store.commit(changes)
         return sums.count
     }
 

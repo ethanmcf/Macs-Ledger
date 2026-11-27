@@ -1,16 +1,14 @@
 import SwiftUI
-import SwiftData
 
 struct QuickEntryView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(LedgerStore.self) private var store
 
     /// Hidden categories are left out of quick entry.
-    @Query(filter: #Predicate<Category> { !$0.isHidden }, sort: \Category.sortOrder)
-    private var categories: [Category]
-    @Query private var monthExpenses: [Expense]
+    private var categories: [Category] { store.visibleCategories }
+    private var monthExpenses: [Expense] { store.expenses(for: month) }
 
     @State private var amount: String = ""
-    @State private var selectedCategory: Category?
+    @State private var selectedCategoryId: String?
     @State private var errorMessage: String?
     @FocusState private var isAmountFocused: Bool
 
@@ -21,8 +19,10 @@ struct QuickEntryView: View {
     init(month: Month = .current, onDismiss: (() -> Void)? = nil) {
         self.month = month
         self.onDismiss = onDismiss
-        let key = month.key
-        _monthExpenses = Query(filter: #Predicate<Expense> { $0.monthKey == key })
+    }
+
+    private var selectedCategory: Category? {
+        categories.first { $0.id == selectedCategoryId }
     }
 
     private var monthlyTotal: Decimal {
@@ -30,7 +30,8 @@ struct QuickEntryView: View {
     }
 
     private var categoryTotal: Decimal {
-        selectedCategory?.total(for: month) ?? 0
+        guard let selectedCategoryId else { return 0 }
+        return monthExpenses.filter { $0.categoryId == selectedCategoryId }.reduce(0) { $0 + $1.amount }
     }
 
     private var parsedAmount: Decimal? {
@@ -64,13 +65,10 @@ struct QuickEntryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .fontDesign(.rounded)
         .tint(accent)
-        .onAppear {
-            try? LedgerStore.seedDefaultsIfNeeded(in: context)
-            isAmountFocused = true
-        }
+        .onAppear { isAmountFocused = true }
         .onChange(of: categories, initial: true) {
-            if selectedCategory == nil || !categories.contains(where: { $0 == selectedCategory }) {
-                selectedCategory = categories.first
+            if selectedCategory == nil {
+                selectedCategoryId = categories.first?.id
             }
         }
         .alert("Couldn't save", isPresented: .constant(errorMessage != nil)) {
@@ -136,11 +134,11 @@ struct QuickEntryView: View {
                     CategoryChip(
                         title: category.name,
                         icon: category.icon,
-                        isSelected: category == selectedCategory,
+                        isSelected: category.id == selectedCategoryId,
                         accent: accent
                     ) {
                         withAnimation(.snappy(duration: 0.2)) {
-                            selectedCategory = category
+                            selectedCategoryId = category.id
                         }
                     }
                 }
@@ -203,7 +201,7 @@ struct QuickEntryView: View {
         guard let value = parsedAmount, let category = selectedCategory else { return }
         do {
             let date = month == .current ? Date.now : month.startDate
-            try LedgerStore.addExpense(amount: value, category: category, date: date, in: context)
+            try store.addExpense(amount: value, category: category, date: date)
             amount = ""
             isAmountFocused = false
             onDismiss?()
@@ -211,9 +209,4 @@ struct QuickEntryView: View {
             errorMessage = error.localizedDescription
         }
     }
-}
-
-#Preview {
-    QuickEntryView()
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

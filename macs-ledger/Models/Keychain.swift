@@ -1,9 +1,8 @@
 import Foundation
 import Security
 
-/// Minimal Keychain storage for small secrets (the backup URL and token).
 enum Keychain {
-    private static let service = "macs-ledger.backup"
+    private static let service = "macs-ledger"
 
     static func string(for key: String) -> String? {
         let query: [String: Any] = [

@@ -58,7 +58,3 @@ struct SplashView: View {
         onFinished()
     }
 }
-
-#Preview {
-    SplashView {}
-}

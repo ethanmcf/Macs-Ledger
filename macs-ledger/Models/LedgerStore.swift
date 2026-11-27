@@ -1,256 +1,312 @@
 import Foundation
-import SwiftData
+import Observation
+import FirebaseCore
+import FirebaseFirestore
 
-/// Add / delete helpers for categories and expenses.
+/// The app's data: every category and expense, kept live from Firestore.
 ///
-/// Every change also records a `PendingChange` in the same save, so it can be backed up to the
-/// Google Sheet later (see `SyncService`). Nothing here touches the network.
-enum LedgerStore {
+/// Everything lives under `ledgers/{ledgerKey}`. The key is a long random string made on first launch and kept
+/// in the Keychain. There's no sign-in: knowing the key is what gives access (see `firestore.rules`).
+///
+/// Firestore's offline cache is the on-phone database. Writes apply to the cache immediately, so the
+/// views update right away, even offline, and Firestore uploads them when it can, including after the
+/// app restarts. Nothing here waits on the network.
+@MainActor
+@Observable
+final class LedgerStore {
+    static let shared = LedgerStore()
+
+    /// All categories, in chip order.
+    private(set) var categories: [Category] = []
+    /// All expenses, newest first.
+    private(set) var expenses: [Expense] = []
+    private var categoryByID: [String: Category] = [:]
+
+    // MARK: Status shown in Settings › Cloud Sync
+
+    private(set) var ledgerKey = ""
+    /// True until Firestore has heard from the server (offline, or still connecting).
+    private(set) var isOffline = true
+    /// True while changes made on this phone haven't reached the server yet.
+    var hasPendingWrites: Bool { categoriesPending || expensesPending }
+    
+    var lastError: String? { readError ?? otherError }
+    private var readError: String?
+    private var otherError: String?
+
+    func dismissError() { otherError = nil }
+
+    private var categoriesPending = false
+    private var expensesPending = false
+    private var categoriesFromCache = true
+    private var expensesFromCache = true
+
+    private let db: Firestore
+    private var listeners: [ListenerRegistration] = []
+
+    private enum Keys {
+        static let ledgerKey = "ledgerKey"
+    }
+
+    // MARK: - Lifecycle
+
+    /// Connects to Firebase using GoogleService-Info.plist (crashes at launch if it's missing).
+    private init() {
+        FirebaseApp.configure()
+        db = Firestore.firestore()
+        let settings = db.settings
+        // The cache is the app's only copy of the data on the phone, so never let Firestore evict any of it.
+        settings.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: FirestoreCacheSizeUnlimited))
+        db.settings = settings
+    }
+
+    /// Call once at launch. Starts listening. On the very first launch it makes a new ledger key and adds the
+    /// default categories to the new ledger.
+    func start() {
+        if let key = Keychain.string(for: Keys.ledgerKey), LedgerKey.isValid(key) {
+            ledgerKey = key
+            listen()
+        } else {
+            let key = LedgerKey.generate()
+            Keychain.set(key, for: Keys.ledgerKey)
+            if Keychain.string(for: Keys.ledgerKey) != key {
+                otherError = "Couldn't save the ledger key to the Keychain. Copy it from Settings › Cloud Sync before closing the app."
+            }
+            ledgerKey = key
+            listen()
+            populateNewLedger()
+        }
+    }
+
+    /// Switches to another ledger, e.g. on a new phone: paste the key from Settings › Cloud Sync on the old one.
+    func useLedger(key: String) throws {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard LedgerKey.isValid(trimmed) else { throw LedgerError.invalidKey }
+        guard trimmed != ledgerKey else { return }
+        Keychain.set(trimmed, for: Keys.ledgerKey)
+        ledgerKey = trimmed
+        categories = []
+        expenses = []
+        categoryByID = [:]
+        readError = nil
+        otherError = nil
+        listen()
+    }
+
+    /// Only used after `start()`, which always sets `ledgerKey`.
+    private var ledger: DocumentReference {
+        db.collection("ledgers").document(ledgerKey)
+    }
+
+    private func listen() {
+        listeners.forEach { $0.remove() }
+        listeners = []
+
+        // Snapshots arrive on the main queue.
+        listeners.append(ledger.collection("categories").addSnapshotListener(includeMetadataChanges: true) { [weak self] snapshot, error in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard let snapshot else { return self.reportReadError(error) }
+                self.categories = snapshot.documents.map(Category.init(document:))
+                    .sorted { ($0.sortOrder, $0.createdAt) < ($1.sortOrder, $1.createdAt) }
+                self.categoryByID = Dictionary(self.categories.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                self.categoriesPending = snapshot.metadata.hasPendingWrites
+                self.categoriesFromCache = snapshot.metadata.isFromCache
+                self.updateStatus()
+            }
+        })
+        listeners.append(ledger.collection("expenses").addSnapshotListener(includeMetadataChanges: true) { [weak self] snapshot, error in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard let snapshot else { return self.reportReadError(error) }
+                self.expenses = snapshot.documents.map(Expense.init(document:)).sorted { $0.date > $1.date }
+                self.expensesPending = snapshot.metadata.hasPendingWrites
+                self.expensesFromCache = snapshot.metadata.isFromCache
+                self.updateStatus()
+            }
+        })
+    }
+
+    private func updateStatus() {
+        isOffline = categoriesFromCache || expensesFromCache
+        readError = nil
+    }
+
+    private func reportReadError(_ error: Error?) {
+        guard let error else { return }
+        readError = Self.describe(error)
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let error = error as NSError
+        if error.domain == FirestoreErrorDomain, error.code == FirestoreErrorCode.permissionDenied.rawValue {
+            return "Firestore refused access. Check that the rules in firestore.rules are published in the Firebase console."
+        }
+        return error.localizedDescription
+    }
+
+    /// A brand-new ledger is empty, so this needs no network: add the default categories.
+    private func populateNewLedger() {
+        commit(Category.defaults.enumerated().map { index, item in
+            .setCategory(Category(id: newID(), name: item.name, icon: item.icon, sortOrder: index))
+        })
+    }
+
+    // MARK: - Writing
+
+    enum Change {
+        case setCategory(Category)
+        case deleteCategory(String)
+        case setExpense(Expense)
+        case deleteExpense(String)
+    }
+
+    /// A new document ID. Firestore makes these on the phone, so this works offline.
+    func newID() -> String {
+        ledger.collection("expenses").document().documentID
+    }
+
+    /// Applies changes together. Firestore allows 500 writes per batch, so bigger sets are split.
+    func commit(_ changes: [Change]) {
+        let categoriesRef = ledger.collection("categories")
+        let expensesRef = ledger.collection("expenses")
+        for start in stride(from: 0, to: changes.count, by: 500) {
+            let batch = ledger.firestore.batch()
+            for change in changes[start..<min(start + 500, changes.count)] {
+                switch change {
+                case .setCategory(let category): batch.setData(category.fields, forDocument: categoriesRef.document(category.id))
+                case .deleteCategory(let id): batch.deleteDocument(categoriesRef.document(id))
+                case .setExpense(let expense): batch.setData(expense.fields, forDocument: expensesRef.document(expense.id))
+                case .deleteExpense(let id): batch.deleteDocument(expensesRef.document(id))
+                }
+            }
+            // The completion runs once the server accepts or rejects the batch, which may be much later.
+            // Don't wait for it: the change is already in the cache and on screen.
+            batch.commit { [weak self] error in
+                guard let error else { return }
+                let message = "A change couldn't be saved to the cloud: " + Self.describe(error)
+                Task { @MainActor in self?.otherError = message }
+            }
+        }
+    }
 
     // MARK: Categories
 
+    func category(id: String?) -> Category? {
+        id.flatMap { categoryByID[$0] }
+    }
+
+    func expenses(in category: Category) -> [Expense] {
+        expenses.filter { $0.categoryId == category.id }
+    }
+
+    /// Categories shown in quick entry.
+    var visibleCategories: [Category] {
+        categories.filter { !$0.isHidden }
+    }
+
     @discardableResult
-    static func addCategory(name: String, icon: String = "tag.fill", in context: ModelContext) throws -> Category {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw LedgerError.emptyName }
-
-        let existing = try context.fetch(FetchDescriptor<Category>())
-        guard !existing.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else {
-            throw LedgerError.duplicateCategory(trimmed)
-        }
-
-        let nextOrder = (existing.map(\.sortOrder).max() ?? -1) + 1
-        let category = Category(name: trimmed, icon: icon, sortOrder: nextOrder)
-        context.insert(category)
-        try recordChange(.upsert, category, in: context)
-        try saveAndSync(context)
+    func addCategory(name: String, icon: String = "tag.fill") throws -> Category {
+        let trimmed = try validName(name, excluding: nil)
+        let nextOrder = (categories.map(\.sortOrder).max() ?? -1) + 1
+        let category = Category(id: newID(), name: trimmed, icon: icon, sortOrder: nextOrder)
+        commit([.setCategory(category)])
         return category
     }
 
     /// Renames a category and/or changes its icon.
-    static func updateCategory(_ category: Category, name: String, icon: String, in context: ModelContext) throws {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw LedgerError.emptyName }
-        let others = try context.fetch(FetchDescriptor<Category>()).filter { $0 != category }
-        guard !others.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else {
-            throw LedgerError.duplicateCategory(trimmed)
-        }
-        let renamed = category.name != trimmed
-        category.name = trimmed
-        category.icon = icon
-        try recordChange(.upsert, category, in: context)
-        // The sheet shows each expense's category name, so re-send them after a rename.
-        if renamed {
-            for expense in category.expenses { try recordChange(.upsert, expense, in: context) }
-        }
-        try saveAndSync(context)
+    func updateCategory(_ category: Category, name: String, icon: String) throws {
+        var updated = category
+        updated.name = try validName(name, excluding: category.id)
+        updated.icon = icon
+        commit([.setCategory(updated)])
     }
 
     /// Hides or shows a category in quick entry. Its expenses are unaffected.
-    static func setHidden(_ hidden: Bool, for category: Category, in context: ModelContext) throws {
-        category.isHidden = hidden
-        try recordChange(.upsert, category, in: context)
-        try saveAndSync(context)
+    func setHidden(_ hidden: Bool, for category: Category) {
+        var updated = category
+        updated.isHidden = hidden
+        commit([.setCategory(updated)])
     }
 
     /// Saves a new chip order: each category's position in the array becomes its sortOrder.
-    static func reorder(_ categories: [Category], in context: ModelContext) throws {
-        for (index, category) in categories.enumerated() where category.sortOrder != index {
-            category.sortOrder = index
-            try recordChange(.upsert, category, in: context)
-        }
-        try saveAndSync(context)
+    func reorder(_ categories: [Category]) {
+        commit(categories.enumerated().compactMap { index, category in
+            guard category.sortOrder != index else { return nil }
+            var updated = category
+            updated.sortOrder = index
+            return .setCategory(updated)
+        })
     }
 
     /// Moves every expense to another category, then deletes the now-empty category.
-    static func deleteCategory(_ category: Category, movingExpensesTo destination: Category, in context: ModelContext) throws {
-        for expense in Array(category.expenses) {
-            expense.category = destination
-            try recordChange(.upsert, expense, in: context)
+    func deleteCategory(_ category: Category, movingExpensesTo destination: Category) {
+        let moves = expenses(in: category).map { expense -> Change in
+            var moved = expense
+            moved.categoryId = destination.id
+            return .setExpense(moved)
         }
-        try recordChange(.delete, category, in: context)
-        context.delete(category)
-        try saveAndSync(context)
+        commit(moves + [.deleteCategory(category.id)])
     }
 
     /// Deletes the category and all of its expenses.
-    static func deleteCategoryAndExpenses(_ category: Category, in context: ModelContext) throws {
-        for expense in Array(category.expenses) {
-            try recordChange(.delete, expense, in: context)
-            context.delete(expense)
-        }
-        try recordChange(.delete, category, in: context)
-        context.delete(category)
-        try saveAndSync(context)
+    func deleteCategoryAndExpenses(_ category: Category) {
+        commit(expenses(in: category).map { .deleteExpense($0.id) } + [.deleteCategory(category.id)])
     }
 
-    /// Inserts the default categories if none exist yet.
-    /// Not recorded for backup on purpose: after a reinstall, "Update from Google Sheet" matches these by name
-    /// to the sheet's categories. A default is backed up the first time it's used (see `recordChange`).
-    static func seedDefaultsIfNeeded(in context: ModelContext) throws {
-        guard try context.fetchCount(FetchDescriptor<Category>()) == 0 else { return }
-        for (index, item) in Category.defaults.enumerated() {
-            context.insert(Category(name: item.name, icon: item.icon, sortOrder: index))
+    private func validName(_ name: String, excluding id: String?) throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw LedgerError.emptyName }
+        guard !categories.contains(where: { $0.id != id && $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else {
+            throw LedgerError.duplicateCategory(trimmed)
         }
-        try context.save()
+        return trimmed
     }
 
     // MARK: Expenses
 
-    @discardableResult
-    static func addExpense(amount: Decimal, category: Category, date: Date = .now, note: String = "", in context: ModelContext) throws -> Expense {
+    func addExpense(amount: Decimal, category: Category, date: Date = .now, note: String = "") throws {
         guard amount > 0 else { throw LedgerError.invalidAmount }
-        let expense = Expense(amount: amount, category: category, date: date, note: note)
-        context.insert(expense)
-        try recordChange(.upsert, expense, in: context)
-        try saveAndSync(context)
-        return expense
+        commit([.setExpense(Expense(id: newID(), amount: amount, categoryId: category.id, date: date, note: note))])
     }
 
     /// Saves edits to an expense. Recomputes its month so it moves if the date changed.
-    static func updateExpense(_ expense: Expense, amount: Decimal, category: Category, date: Date, in context: ModelContext) throws {
+    func updateExpense(_ expense: Expense, amount: Decimal, category: Category, date: Date) throws {
         guard amount > 0 else { throw LedgerError.invalidAmount }
-        expense.amount = amount
-        expense.category = category
-        expense.date = date
-        expense.monthKey = Month(containing: date).key
-        try recordChange(.upsert, expense, in: context)
-        try saveAndSync(context)
+        var updated = expense
+        updated.amount = amount
+        updated.categoryId = category.id
+        updated.date = date
+        updated.monthKey = Month(containing: date).key
+        commit([.setExpense(updated)])
     }
 
-    static func deleteExpense(_ expense: Expense, in context: ModelContext) throws {
-        try recordChange(.delete, expense, in: context)
-        context.delete(expense)
-        try saveAndSync(context)
+    func deleteExpense(_ expense: Expense) {
+        commit([.deleteExpense(expense.id)])
     }
 
-    // MARK: Backup recording
+    /// Expenses recorded for a month, newest first.
+    func expenses(for month: Month) -> [Expense] {
+        expenses.filter { $0.monthKey == month.key }
+    }
+}
 
-    /// Queues a change for the Google Sheet. Call it before `save()` (and before `delete` for deletions),
-    /// so the change and its queue entry are saved together. A newer change replaces an older queued one
-    /// for the same record, so only the latest version is sent.
-    static func recordChange(_ op: SyncChange.Op, _ expense: Expense, in context: ModelContext) throws {
-        let id = ensureUUID(expense)
-        let now = Date.now
-        expense.updatedAt = now
-        // An expense's category must exist in the sheet too. Categories never backed up (e.g. the
-        // starter defaults) have no updatedAt yet.
-        if op == .upsert, let category = expense.category, category.updatedAt == nil {
-            try recordChange(.upsert, category, in: context)
+// MARK: - Ledger key
+
+enum LedgerKey {
+    /// 48 random hex characters. `firestore.rules` only accepts keys that look like this, so short, guessable
+    /// paths are refused.
+    static func generate() -> String {
+        var bytes = [UInt8](repeating: 0, count: 24)
+        if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
+            bytes = (0..<24).map { _ in UInt8.random(in: .min ... .max) }
         }
-        var change = SyncChange(kind: .expense, op: op, id: id.uuidString, updatedAt: SyncFormat.timestamp(now))
-        if op == .upsert {
-            change.date = SyncFormat.day.string(from: expense.date)
-            change.category = expense.category?.name
-            change.categoryId = expense.category.map { ensureUUID($0).uuidString }
-            change.amount = SyncFormat.amount(expense.amount)
-            change.note = expense.note
-        }
-        try enqueue(change, recordID: id, in: context)
+        return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
-    static func recordChange(_ op: SyncChange.Op, _ category: Category, in context: ModelContext) throws {
-        let id = ensureUUID(category)
-        let now = Date.now
-        category.updatedAt = now
-        var change = SyncChange(kind: .category, op: op, id: id.uuidString, updatedAt: SyncFormat.timestamp(now))
-        if op == .upsert {
-            change.name = category.name
-            change.icon = category.icon
-            change.sortOrder = category.sortOrder
-            change.hidden = category.isHidden
-        }
-        try enqueue(change, recordID: id, in: context)
-    }
-
-    private static func enqueue(_ change: SyncChange, recordID: UUID, in context: ModelContext) throws {
-        let kind = change.kind.rawValue
-        let older = try context.fetch(FetchDescriptor<PendingChange>(
-            predicate: #Predicate { $0.recordID == recordID && $0.kind == kind }
-        ))
-        older.forEach(context.delete)
-        context.insert(try PendingChange(change: change, recordID: recordID))
-    }
-
-    @discardableResult
-    static func ensureUUID(_ expense: Expense) -> UUID {
-        if let id = expense.uuid { return id }
-        let id = UUID()
-        expense.uuid = id
-        return id
-    }
-
-    @discardableResult
-    static func ensureUUID(_ category: Category) -> UUID {
-        if let id = category.uuid { return id }
-        let id = UUID()
-        category.uuid = id
-        return id
-    }
-
-    /// Run once at launch: gives every record a unique ID. Rows saved before backup existed have none, and a
-    /// migration could in theory give several rows the same one, so duplicates are re-assigned too.
-    static func prepareForSync(in context: ModelContext) throws {
-        var seen = Set<UUID>()
-        var changed = false
-        for expense in try context.fetch(FetchDescriptor<Expense>()) {
-            if let id = expense.uuid, seen.insert(id).inserted { continue }
-            let id = UUID()
-            expense.uuid = id
-            seen.insert(id)
-            changed = true
-        }
-        seen.removeAll()
-        for category in try context.fetch(FetchDescriptor<Category>()) {
-            if let id = category.uuid, seen.insert(id).inserted { continue }
-            let id = UUID()
-            category.uuid = id
-            seen.insert(id)
-            changed = true
-        }
-        if changed { try context.save() }
-    }
-
-    /// Saves, then asks the sync service to send queued changes soon. Saving never waits on the network.
-    static func saveAndSync(_ context: ModelContext) throws {
-        try context.save()
-        SyncService.shared.scheduleSync()
-    }
-
-    // MARK: Monthly totals
-
-    /// All expenses recorded for a month, newest first.
-    static func expenses(for month: Month, in context: ModelContext) throws -> [Expense] {
-        let key = month.key
-        let descriptor = FetchDescriptor<Expense>(
-            predicate: #Predicate { $0.monthKey == key },
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
-        )
-        return try context.fetch(descriptor)
-    }
-
-    /// Total spending across all categories for a month.
-    static func total(for month: Month, in context: ModelContext) throws -> Decimal {
-        try expenses(for: month, in: context).reduce(0) { $0 + $1.amount }
-    }
-
-    /// Spending per category for a month. Categories with no spending are included as 0.
-    static func categoryTotals(for month: Month, in context: ModelContext) throws -> [Category: Decimal] {
-        var totals: [Category: Decimal] = [:]
-        for category in try context.fetch(FetchDescriptor<Category>()) {
-            totals[category] = 0
-        }
-        for expense in try expenses(for: month, in: context) {
-            guard let category = expense.category else { continue }
-            totals[category, default: 0] += expense.amount
-        }
-        return totals
-    }
-
-    /// Months that have at least one expense, newest first.
-    static func monthsWithSpending(in context: ModelContext) throws -> [Month] {
-        let keys = Set(try context.fetch(FetchDescriptor<Expense>()).map(\.monthKey))
-        return keys.filter { $0 > 0 }.map(Month.init(key:)).sorted(by: >)
+    /// Same check as `firestore.rules`.
+    static func isValid(_ key: String) -> Bool {
+        (32...128).contains(key.count) && key.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
     }
 }
 
@@ -258,12 +314,14 @@ enum LedgerError: LocalizedError {
     case emptyName
     case duplicateCategory(String)
     case invalidAmount
+    case invalidKey
 
     var errorDescription: String? {
         switch self {
         case .emptyName: "Category name can't be empty."
         case .duplicateCategory(let name): "A category named “\(name)” already exists."
         case .invalidAmount: "Amount must be greater than zero."
+        case .invalidKey: "That isn't a ledger key. It should be 32 or more letters and numbers, copied from Settings › Cloud Sync on your other phone."
         }
     }
 }

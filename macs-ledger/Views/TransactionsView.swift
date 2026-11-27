@@ -1,10 +1,9 @@
 import SwiftUI
-import SwiftData
 
 /// Every expense, grouped by month (newest first). Tap to edit, swipe to delete.
 struct TransactionsView: View {
-    @Environment(\.modelContext) private var context
-    @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
+    @Environment(LedgerStore.self) private var store
+    private var expenses: [Expense] { store.expenses }
 
     @State private var showsAllMonths = false
     @State private var editing: Expense?
@@ -34,7 +33,7 @@ struct TransactionsView: View {
                             .buttonStyle(.plain)
                             .swipeActions {
                                 Button("Delete", systemImage: "trash", role: .destructive) {
-                                    try? LedgerStore.deleteExpense(expense, in: context)
+                                    store.deleteExpense(expense)
                                 }
                             }
                     }
@@ -81,14 +80,15 @@ struct TransactionsView: View {
     }
 
     private func row(_ expense: Expense) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: expense.category?.icon ?? "questionmark")
+        let category = store.category(id: expense.categoryId)
+        return HStack(spacing: 12) {
+            Image(systemName: category?.icon ?? "questionmark")
                 .font(.footnote)
                 .foregroundStyle(accent)
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(accent.opacity(0.12)))
             VStack(alignment: .leading, spacing: 2) {
-                Text(expense.category?.name ?? "Uncategorized")
+                Text(category?.name ?? "Uncategorized")
                     .font(.subheadline.weight(.medium))
                 // Imported rows are monthly totals dated the 1st, so a day would be misleading.
                 Group {
@@ -108,9 +108,4 @@ struct TransactionsView: View {
         }
         .contentShape(Rectangle())
     }
-}
-
-#Preview {
-    NavigationStack { TransactionsView() }
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }

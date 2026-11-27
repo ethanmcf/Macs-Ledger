@@ -1,12 +1,11 @@
 import SwiftUI
-import SwiftData
 import UniformTypeIdentifiers
 
 /// Pick a CSV of monthly category totals, review how columns map to categories, then import.
 struct ImportView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(LedgerStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Category.sortOrder) private var categories: [Category]
+    private var categories: [Category] { store.categories }
 
     @State private var choosingFile = false
     @State private var fileName: String?
@@ -82,7 +81,7 @@ struct ImportView: View {
                     Picker(selection: targetBinding(column)) {
                         Text("New category").tag(CSVImport.Target.create(newNames[column.index] ?? column.header))
                         ForEach(categories) { category in
-                            Text(category.name).tag(CSVImport.Target.existing(category.persistentModelID))
+                            Text(category.name).tag(CSVImport.Target.existing(category.id))
                         }
                         Text("Skip").tag(CSVImport.Target.skip)
                     } label: {
@@ -225,7 +224,7 @@ struct ImportView: View {
         newNames = [:]
         for column in csv.categoryColumns {
             if let match = categories.first(where: { $0.name.caseInsensitiveCompare(column.header) == .orderedSame }) {
-                targets[column.index] = .existing(match.persistentModelID)
+                targets[column.index] = .existing(match.id)
             } else {
                 newNames[column.index] = column.header.capitalized
                 targets[column.index] = .create(column.header.capitalized)
@@ -235,14 +234,9 @@ struct ImportView: View {
 
     private func runImport(_ csv: CSVImport) {
         do {
-            importedCount = try csv.apply(targets: resolvedTargets, fallbackYear: year, in: context)
+            importedCount = try csv.apply(targets: resolvedTargets, fallbackYear: year, in: store)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
-}
-
-#Preview {
-    NavigationStack { ImportView() }
-        .modelContainer(for: [Category.self, Expense.self, PendingChange.self], inMemory: true)
 }
