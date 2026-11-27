@@ -16,7 +16,7 @@ Your data stays on your phone, plus a copy in your own Google Sheet if you turn 
 
 The script `scripts/install-on-phone.sh` builds the app and installs it on your phone over Wi-Fi.
 
-With a free Apple ID, the app stops opening after **7 days**. Run the script again before then to reset the clock. Your data is kept.
+With a free Apple ID, the app stops opening when its signing profile expires, usually **7 days** after it was built. The script reinstalls it with a fresh profile before then. Your data is kept.
 
 ### One-time setup
 
@@ -36,8 +36,27 @@ With a free Apple ID, the app stops opening after **7 days**. Run the script aga
 Make sure your phone is unlocked and on the same Wi-Fi as your Mac (or plugged in with a cable), then run:
 
 ```sh
-./scripts/install-on-phone.sh
+./scripts/install-on-phone.sh --force
 ```
+
+Without `--force`, the script only reinstalls once the app on your phone has **4 days or fewer** left before its profile expires. With a 7-day profile, that's 3 days after each install. It reads the expiry date from the app, but never assumes more than 7 days after a build, even if the profile says longer (a profile can say 1 year if your team once had a paid membership). Before rebuilding, it clears Xcode's cached profile so the new build gets a fresh one.
+
+### Automatic reinstall
+
+Set up a background job that runs the script when you log in to your Mac, and every hour after that:
+
+```sh
+./scripts/install-schedule.sh              # turn it on (run again after moving the repo)
+./scripts/install-schedule.sh --uninstall  # turn it off
+```
+
+Most runs finish instantly ("good until …, nothing to do"). Once the app has 4 days or fewer left, every run tries to reinstall, which gives about 4 days of hourly retries before it expires. You can follow it in the log:
+
+```sh
+tail -f ~/Library/Logs/macs-ledger-install.log
+```
+
+**Does the phone need to be unlocked?** Not necessarily, but it needs to be reachable. A locked, idle iPhone often stops responding over Wi-Fi, and that run is skipped ("isn't reachable"). Any hour your phone is awake on the same Wi-Fi is enough. **Leaving it charging overnight** on the same Wi-Fi is the most reliable option. The Mac needs to be logged in, and on or asleep (not shut down).
 
 ## Back up to a Google Sheet
 
