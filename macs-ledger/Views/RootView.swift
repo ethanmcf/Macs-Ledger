@@ -8,36 +8,26 @@ struct RootView: View {
 
     private let accent = Color.appAccent
 
-    enum Page: String, CaseIterable, Identifiable {
+    enum Page: String {
         case dashboard = "Dashboard"
         case history = "History"
         case transactions = "Transactions"
-        var id: Self { self }
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                pageView(DashboardView(), for: .dashboard)
-                pageView(HistoryView(), for: .history)
-                pageView(TransactionsView(), for: .transactions)
+        // TabView keeps every page alive, so each one keeps its scroll position and expanded lists.
+        TabView(selection: $page) {
+            Tab(Page.dashboard.rawValue, systemImage: "chart.pie.fill", value: Page.dashboard) {
+                pageStack(DashboardView(), title: Page.dashboard.rawValue)
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Page", selection: $page) {
-                        ForEach(Page.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 320)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Settings", systemImage: "gearshape") { showsSettings = true }
-                }
+            Tab(Page.history.rawValue, systemImage: "clock.arrow.circlepath", value: Page.history) {
+                pageStack(HistoryView(), title: Page.history.rawValue)
             }
-            .sheet(isPresented: $showsSettings) { SettingsView() }
-            .overlay(alignment: .bottomTrailing) { addButton }
+            Tab(Page.transactions.rawValue, systemImage: "list.bullet", value: Page.transactions) {
+                pageStack(TransactionsView(), title: Page.transactions.rawValue)
+            }
         }
+        .sheet(isPresented: $showsSettings) { SettingsView() }
         .fontDesign(.rounded)
         .tint(accent)
         .overlay {
@@ -60,13 +50,20 @@ struct RootView: View {
         }
     }
 
-    /// Shows the page only when it's selected, without removing it from the screen.
-    private func pageView(_ view: some View, for target: Page) -> some View {
-        let isVisible = page == target
-        return view
-            .opacity(isVisible ? 1 : 0)
-            .allowsHitTesting(isVisible)
-            .accessibilityHidden(!isVisible)
+    /// One tab's page: its own navigation stack (so tapping a month pushes within the tab), title, settings
+    /// button, and the add button floating above the tab bar.
+    private func pageStack(_ page: some View, title: String) -> some View {
+        NavigationStack {
+            page
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Settings", systemImage: "gearshape") { showsSettings = true }
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) { addButton }
+        }
     }
 
     private var addButton: some View {
