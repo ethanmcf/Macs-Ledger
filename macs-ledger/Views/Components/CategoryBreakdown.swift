@@ -90,6 +90,40 @@ struct Card<Content: View>: View {
     }
 }
 
+/// "Show N more" / "Show less" toggle for a truncated list.
+struct ExpandButton: View {
+    @Binding var isExpanded: Bool
+    let hiddenCount: Int
+
+    var body: some View {
+        Button {
+            withAnimation(.snappy) { isExpanded.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Text(isExpanded ? "Show less" : "Show \(hiddenCount) more")
+                Image(systemName: "chevron.down")
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+            }
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+        }
+    }
+}
+
+/// Placeholder text inside a card that has nothing to show yet.
+struct EmptyCardMessage: View {
+    let message: String
+
+    init(_ message: String) { self.message = message }
+
+    var body: some View {
+        Text(message)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 80)
+    }
+}
+
 extension Decimal {
     var doubleValue: Double { NSDecimalNumber(decimal: self).doubleValue }
 }

@@ -10,6 +10,7 @@ struct RootView: View {
 
     enum Page: String, CaseIterable, Identifiable {
         case dashboard = "Dashboard"
+        case history = "History"
         case transactions = "Transactions"
         var id: Self { self }
     }
@@ -18,6 +19,7 @@ struct RootView: View {
         NavigationStack {
             ZStack {
                 pageView(DashboardView(), for: .dashboard)
+                pageView(HistoryView(), for: .history)
                 pageView(TransactionsView(), for: .transactions)
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -27,7 +29,7 @@ struct RootView: View {
                         ForEach(Page.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 240)
+                    .frame(width: 320)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Settings", systemImage: "gearshape") { showsSettings = true }
