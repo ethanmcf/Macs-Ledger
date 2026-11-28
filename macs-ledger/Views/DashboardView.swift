@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Main page: this month's spending, top categories, year-to-date stats and month history.
+/// Main page: this month's spending, top categories, month history and yearly totals.
 struct DashboardView: View {
     @Environment(LedgerStore.self) private var store
 
@@ -23,9 +23,8 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 28) {
                 monthTotalHeader
                 categoryBreakdown
-                yearStats
                 previousMonths
-                previousYears
+                years
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 96)
@@ -123,17 +122,6 @@ struct DashboardView: View {
         }
     }
 
-    private var yearStats: some View {
-        Card(title: "This year") {
-            HStack(spacing: 16) {
-                yearSummaryStat("Total spent", yearToDate)
-                Divider()
-                yearSummaryStat("Monthly average", monthlyAverage)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     private var previousMonths: some View {
         Card(title: "Previous months") {
             let allRows = previousMonthTotals
@@ -185,35 +173,28 @@ struct DashboardView: View {
         }
     }
 
-    /// One card per earlier year, or a placeholder card when there are none.
-    @ViewBuilder
-    private var previousYears: some View {
-        let rows = previousYearTotals
-        if rows.isEmpty {
-            Card(title: "Previous years") {
-                emptyState("Past years will appear here")
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Previous years")
-                    .font(.headline)
-                    .padding(.leading, 4)
-                ForEach(rows, id: \.year) { row in
-                    Card(title: String(row.year)) {
-                        HStack(spacing: 16) {
-                            yearSummaryStat("Total spent", row.total, font: .title3.weight(.bold))
-                            Divider()
-                            yearSummaryStat("Monthly average", row.monthlyAverage, font: .title3.weight(.bold))
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
+    /// One card per year, newest first: this year so far, then each earlier year with spending.
+    private var years: some View {
+        let rows = [YearTotal(year: month.year, total: yearToDate, monthlyAverage: monthlyAverage)] + previousYearTotals
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Years")
+                .font(.headline)
+                .padding(.leading, 4)
+            ForEach(rows, id: \.year) { row in
+                Card(title: row.year == month.year ? "\(row.year) so far" : String(row.year)) {
+                    HStack(spacing: 16) {
+                        yearSummaryStat("Total spent", row.total)
+                        Divider()
+                        yearSummaryStat("Monthly average", row.monthlyAverage)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
     }
 
-    /// Labeled value used in the current year and Previous years cards.
-    private func yearSummaryStat(_ label: String, _ value: Decimal, font: Font = .title2.weight(.bold)) -> some View {
+    /// Labeled value used in the year cards.
+    private func yearSummaryStat(_ label: String, _ value: Decimal, font: Font = .title3.weight(.bold)) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.caption.weight(.semibold))
