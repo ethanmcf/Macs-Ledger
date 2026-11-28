@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Spending history: every past month (tap one for its breakdown), then a card per earlier year.
-struct HistoryView: View {
+struct TrendsView: View {
     @Environment(LedgerStore.self) private var store
 
     @State private var showsAllPreviousMonths = false
+    @State private var averagePeriod: AveragePeriod = .thisYear
 
     private let accent = Color.appAccent
     private let currencyCode = "CAD"
@@ -15,6 +15,7 @@ struct HistoryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                averages
                 previousMonths
                 previousYears
             }
@@ -49,12 +50,66 @@ struct HistoryView: View {
             .sorted { $0.year > $1.year }
     }
 
+    /// The complete months the averages cover, oldest first.
+    private var averageMonths: [Month] {
+        store.completeMonths(from: averagePeriod == .thisYear ? Month(year: month.year, month: 1) : nil)
+    }
+
+    private var totalLabel: String {
+        if averagePeriod == .thisYear { return "Spent so far this year" }
+        return store.firstMonth.map { "Spent all time since \($0.title)" } ?? "Spent all time"
+    }
+
+    /// Spent in the chosen period, including this month: so far this year, or ever.
+    private var periodTotal: Decimal {
+        let spent = averagePeriod == .thisYear
+            ? store.expenses.filter { $0.monthKey / 100 == month.year && $0.monthKey <= month.key }
+            : store.expenses
+        return spent.reduce(0) { $0 + $1.amount }
+    }
+
     private func share(_ amount: Decimal, of whole: Decimal) -> Double {
         guard whole > 0 else { return 0 }
         return (amount / whole).doubleValue
     }
 
     // MARK: - Sections
+
+    private var averages: some View {
+        Card(title: averagePeriod == .thisYear ? "This year" : "All time") {
+            VStack(alignment: .leading, spacing: 14) {
+                Picker("Period", selection: $averagePeriod) {
+                    ForEach(AveragePeriod.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                let months = averageMonths
+                Text("Average per month by category")
+                    .font(.subheadline.weight(.semibold))
+                if let average = store.monthlyAverage(over: months) {
+                    // Bars show each category's share of total spending.
+                    CategoryBreakdownRows(items: store.categoryAverages(over: months), total: average, currencyCode: currencyCode)
+                } else {
+                    EmptyCardMessage(averagePeriod == .thisYear && month.month == 1
+                                     ? "Averages for this year start once January is over"
+                                     : "Averages appear once your first month is over")
+                }
+
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(totalLabel)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(periodTotal, format: .currency(code: currencyCode))
+                        .font(.system(size: 36, weight: .bold))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
+            }
+        }
+    }
 
     private var previousMonths: some View {
         Card(title: "Previous months") {
@@ -151,6 +206,11 @@ struct HistoryView: View {
 }
 
 // MARK: - Supporting types
+
+private enum AveragePeriod: String, CaseIterable {
+    case thisYear = "This year"
+    case allTime = "All time"
+}
 
 private struct YearTotal {
     let year: Int

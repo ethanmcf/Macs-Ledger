@@ -10,7 +10,7 @@ struct RootView: View {
 
     enum Page: String {
         case dashboard = "Dashboard"
-        case history = "History"
+        case trends = "Trends"
         case transactions = "Transactions"
     }
 
@@ -20,8 +20,8 @@ struct RootView: View {
             Tab(Page.dashboard.rawValue, systemImage: "chart.pie.fill", value: Page.dashboard) {
                 pageStack(DashboardView(), title: Page.dashboard.rawValue)
             }
-            Tab(Page.history.rawValue, systemImage: "clock.arrow.circlepath", value: Page.history) {
-                pageStack(HistoryView(), title: Page.history.rawValue)
+            Tab(Page.trends.rawValue, systemImage: "chart.line.uptrend.xyaxis", value: Page.trends) {
+                pageStack(TrendsView(), title: Page.trends.rawValue)
             }
             Tab(Page.transactions.rawValue, systemImage: "list.bullet", value: Page.transactions) {
                 pageStack(TransactionsView(), title: Page.transactions.rawValue)

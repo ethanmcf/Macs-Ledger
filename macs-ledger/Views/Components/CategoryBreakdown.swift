@@ -2,10 +2,11 @@ import SwiftUI
 
 /// One category's spending for a period.
 struct CategoryTotal: Identifiable {
+    /// The category's document ID.
+    let id: String
     let name: String
     let icon: String
     let amount: Decimal
-    var id: String { name }
 
     /// Spending per category for the given expenses, largest first. Only categories with spending.
     static func totals(for expenses: some Sequence<Expense>, in store: LedgerStore) -> [CategoryTotal] {
@@ -16,7 +17,7 @@ struct CategoryTotal: Identifiable {
         }
         return sums.values
             .filter { $0.amount > 0 }
-            .map { CategoryTotal(name: $0.category.name, icon: $0.category.icon, amount: $0.amount) }
+            .map { CategoryTotal(id: $0.category.id, name: $0.category.name, icon: $0.category.icon, amount: $0.amount) }
             .sorted { $0.amount > $1.amount }
     }
 }

@@ -8,7 +8,6 @@ struct TransactionsView: View {
     @State private var showsAllMonths = false
     @State private var editing: Expense?
 
-    private let accent = Color.appAccent
     private let currencyCode = "CAD"
     /// Months shown before the list is expanded.
     private let monthLimit = 3
@@ -29,7 +28,7 @@ struct TransactionsView: View {
             ForEach(visible, id: \.month) { section in
                 Section {
                     ForEach(section.expenses) { expense in
-                        Button { editing = expense } label: { row(expense) }
+                        Button { editing = expense } label: { TransactionRow(expense: expense) }
                             .buttonStyle(.plain)
                             .swipeActions {
                                 Button("Delete", systemImage: "trash", role: .destructive) {
@@ -77,35 +76,5 @@ struct TransactionsView: View {
         .sheet(item: $editing) { expense in
             EditExpenseView(expense: expense)
         }
-    }
-
-    private func row(_ expense: Expense) -> some View {
-        let category = store.category(id: expense.categoryId)
-        return HStack(spacing: 12) {
-            Image(systemName: category?.icon ?? "questionmark")
-                .font(.footnote)
-                .foregroundStyle(accent)
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(accent.opacity(0.12)))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(category?.name ?? "Uncategorized")
-                    .font(.subheadline.weight(.medium))
-                // Imported rows are monthly totals dated the 1st, so a day would be misleading.
-                Group {
-                    if expense.isImported {
-                        Text("Imported monthly total")
-                    } else {
-                        Text(expense.date, format: .dateTime.month(.abbreviated).day())
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text(expense.amount, format: .currency(code: currencyCode))
-                .font(.subheadline.weight(.semibold))
-                .monospacedDigit()
-        }
-        .contentShape(Rectangle())
     }
 }
